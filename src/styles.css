@@ -50,6 +50,20 @@ form {
     text-align: end;
 }
 
+#objectiveOptions {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    margin: 0 0 10px 20px;
+    padding: 6px 8px;
+    border: 1px solid currentColor;
+}
+
+#objectiveOptions label {
+    white-space: nowrap;
+}
+
 #checkboxes {
     margin-bottom: 10px;
 }
@@ -112,6 +126,13 @@ form {
     visibility: hidden;
 }
 
+#resultSummary {
+    max-width: 280px;
+    min-height: 1.2em;
+    margin-top: 8px;
+    text-align: right;
+}
+
 #bigClick, #liveSolve {
     margin-left: 20px;
 }
@@ -140,4 +161,30 @@ form {
 
 #currentPieces {
     white-space: nowrap;
+}
+
+@media (max-width: 600px) {
+    #legionFooter {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    #legionFooter > #labels,
+    #legionFooter > #middlelabels,
+    #legionFooter > #options {
+        flex: none;
+    }
+
+    #options {
+        width: 220px;
+        text-align: left;
+    }
+
+    #objectiveOptions {
+        margin-left: 0;
+    }
+
+    #resultSummary {
+        text-align: left;
+    }
 }

@@ -48,6 +48,9 @@ getTextNodesIn(document.getElementById('time'))[0].textContent = i18n('time');
 document.querySelector('label[for="bigClick"]').textContent = i18n('bigClick');
 document.querySelector('label[for="liveSolve"]').textContent = i18n('liveSolve');
 document.querySelector('label[for="darkMode"]').textContent = i18n('darkMode');
+document.getElementById('objectiveLegend').textContent = i18n('optimizationGoal');
+document.getElementById('coverageObjectiveLabel').textContent = i18n('coverageObjective');
+document.getElementById('piecesObjectiveLabel').textContent = i18n('piecesObjective');
 
 document.getElementById('boardButton').textContent = i18n('start');
 document.getElementById('resetButton').textContent = i18n('reset');

@@ -4,8 +4,8 @@ export default {
 
     instructionsSub1: '1. ユニオンマップをもっと早く埋めるためには地域選択のボタンを活性化してから地域を選択してください。',
     instructionsSub2: '2. ユニオンマップに埋めようとする職業の数を入力してください。',
-    instructionsSub3: '3. 算定された空間は選択された空間の量と同じでなければならず、同じでなければプログラムは繰り返します。',
-    instructionsSub4: '4. プログラムがルートを探しているときにその状況を見たいなら、実時間見るボタンを活性化してください。',
+    instructionsSub3: '3. ブロック数は使用可能な上限です。面積が一致しなくても、空きマスや未使用ブロックを許した最適配置を返します。',
+    instructionsSub4: '4. マス数優先またはブロック数優先を選んで開始してください。実時間表示では現在の最良配置を確認できます。',
 
     spacesToBeFilled: 'キャラクターの算定された空間: ',
     boardSpacesFilled: 'マップの選択された空間: ',
@@ -16,6 +16,19 @@ export default {
     bigClick: '地域選択',
     liveSolve: '実時間見る',
     darkMode: 'ダークモード',
+
+    optimizationGoal: '最適化目標',
+    coverageObjective: 'マス数を優先',
+    piecesObjective: 'ブロック数を優先',
+    resultOptimal: '最適解',
+    resultBestKnown: '現在の最良解',
+    resultNoSolution: '有効な配置がありません',
+    resultInvalid: '入力を確認してください',
+    resultError: '計算エラー',
+    resultCovered: 'カバー',
+    resultUsed: '使用',
+    cellUnit: 'マス',
+    pieceUnit: '個',
 
     start: 'スタート',
     pause: 'ポーズ',

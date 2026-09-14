@@ -45,6 +45,17 @@
           <div id="failText"></div>
         </div>
         <div id="options">
+          <fieldset id="objectiveOptions">
+            <legend id="objectiveLegend">Optimization Goal</legend>
+            <label for="objectiveCoverage">
+              <input id="objectiveCoverage" type="radio" name="objective" value="coverage" checked>
+              <span id="coverageObjectiveLabel">Cell Coverage</span>
+            </label>
+            <label for="objectivePieces">
+              <input id="objectivePieces" type="radio" name="objective" value="pieces">
+              <span id="piecesObjectiveLabel">Piece Count</span>
+            </label>
+          </fieldset>
           <div id="checkboxes">
             <input type="checkbox" id="bigClick"></input>
             <label for="bigClick">Region Click</label>
@@ -61,6 +72,7 @@
               Time: <span id="timeValue"></span>
             </div>
           </div>
+          <div id="resultSummary" aria-live="polite"></div>
         </div>
       </div>
     </div>

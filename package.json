@@ -26,6 +26,8 @@
   "scripts": {
     "dev": "npx webpack serve --config webpack.config.dev.cjs",
     "build": "npm run clean && npx webpack --config webpack.config.prod.cjs",
-    "clean": "rimraf dist/prod"
+    "clean": "rimraf dist/prod",
+    "test": "node --test",
+    "benchmark": "node benchmarks/solver-benchmark.js"
   }
 }
