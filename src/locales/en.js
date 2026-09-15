@@ -32,6 +32,7 @@ export default {
     start: 'Start',
     pause: 'Pause',
     continue: 'Continue',
+    stop: 'Stop',
     reset: 'Reset',
     clearPieces: 'Clear Pieces',
     clearBoard: 'Clear Board',

@@ -32,6 +32,7 @@ export default {
     start: '시작',
     pause: 'Pause',
     continue: 'Continue',
+    stop: '중지',
     reset: '리셋',
     clearPieces: '캐릭터 초기화',
     clearBoard: '유니온 지도 초기화',

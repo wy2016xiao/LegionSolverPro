@@ -3,7 +3,11 @@ import assert from 'node:assert/strict';
 
 import { OBJECTIVES } from '../src/modules/solver/constants.js';
 import { buildProblem } from '../src/modules/solver/problem.js';
-import { createSearch, solveToCompletion } from '../src/modules/solver/search.js';
+import {
+    createSearch,
+    INTERACTIVE_SEARCH_OPTIONS,
+    solveToCompletion,
+} from '../src/modules/solver/search.js';
 import { bruteForce } from './helpers/brute-force.js';
 
 function scoreOf(solution) {
@@ -11,6 +15,14 @@ function scoreOf(solution) {
         coveredCells: solution.coveredCells,
         placedPieces: solution.placedPieces,
     };
+}
+
+function solveWithOptions(problem, objective, options) {
+    const search = createSearch(problem, objective, options);
+    while (!search.isComplete()) {
+        search.step(100000);
+    }
+    return search.getBest();
 }
 
 test('search matches brute force when objectives prefer different layouts', () => {
@@ -86,6 +98,32 @@ test('step budget is bounded and produces a deterministic layout', () => {
     assert.ok(search.getStats().iterations <= 1);
 });
 
+test('initial incumbent work can be bounded without changing exact search', () => {
+    const problem = buildProblem([[0, 0, 0, 0]], [
+        { id: 1, amount: 2, shape: [[2, 1]] },
+    ], {
+        centerCells: [{ x: 1, y: 0 }, { x: 2, y: 0 }],
+    });
+    const search = createSearch(problem, OBJECTIVES.COVERAGE, {
+        maxExactCoverStates: 0,
+        maxGreedySeeds: 1,
+    });
+
+    assert.equal(search.getStats().initializationStates, 0);
+    assert.equal(search.getStats().initializationGreedySeeds, 1);
+    while (!search.isComplete()) {
+        search.step(10);
+    }
+    assert.deepEqual(scoreOf(search.getBest()), { coveredCells: 4, placedPieces: 2 });
+});
+
+test('interactive search bounds synchronous initialization work', () => {
+    assert.deepEqual(INTERACTIVE_SEARCH_OPTIONS, {
+        maxExactCoverStates: 100,
+        maxGreedySeeds: 4,
+    });
+});
+
 test('search matches brute force across generated small-board cases', () => {
     for (let targetBits = 1; targetBits < 32; targetBits++) {
         const board = [Array.from({ length: 5 }, (_, x) => (
@@ -102,11 +140,21 @@ test('search matches brute force across generated small-board cases', () => {
 
                 for (const objective of Object.values(OBJECTIVES)) {
                     const actual = solveToCompletion(problem, objective);
+                    const interactive = solveWithOptions(
+                        problem,
+                        objective,
+                        INTERACTIVE_SEARCH_OPTIONS,
+                    );
                     const expected = bruteForce(problem, objective);
                     assert.deepEqual(
                         scoreOf(actual),
                         scoreOf(expected),
                         `target=${targetBits}, singles=${singles}, dominoes=${dominoes}, objective=${objective}`,
+                    );
+                    assert.deepEqual(
+                        scoreOf(interactive),
+                        scoreOf(expected),
+                        `interactive target=${targetBits}, singles=${singles}, dominoes=${dominoes}, objective=${objective}`,
                     );
                 }
             }

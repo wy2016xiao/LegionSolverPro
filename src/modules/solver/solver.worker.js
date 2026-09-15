@@ -1,6 +1,6 @@
 import { OBJECTIVES, RESULT_STATUS } from './constants.js';
 import { buildProblem } from './problem.js';
-import { createSearch } from './search.js';
+import { createSearch, INTERACTIVE_SEARCH_OPTIONS } from './search.js';
 
 const TIME_SLICE_MS = 12;
 const STATES_PER_STEP = 200;
@@ -22,6 +22,7 @@ self.onmessage = event => {
         start(payload);
     } else if (type === 'pause') {
         paused = true;
+        postIncumbentIfNeeded();
     } else if (type === 'resume' && search && paused) {
         paused = false;
         scheduleBatch();
@@ -35,6 +36,11 @@ self.onmessage = event => {
 };
 
 function start(payload) {
+    // 预计算是求解的一部分，UI 耗时必须与基准一样从输入编译前开始统计。
+    startedAt = performance.now();
+    firstSolutionMs = null;
+    lastProgressAt = startedAt;
+    lastIncumbentKey = null;
     try {
         validatePayload(payload);
         problem = buildProblem(payload.board, payload.pieces);
@@ -47,13 +53,13 @@ function start(payload) {
             return;
         }
 
-        search = createSearch(problem, payload.objective || OBJECTIVES.COVERAGE);
+        search = createSearch(
+            problem,
+            payload.objective || OBJECTIVES.COVERAGE,
+            INTERACTIVE_SEARCH_OPTIONS,
+        );
         paused = false;
         cancelled = false;
-        startedAt = performance.now();
-        firstSolutionMs = null;
-        lastProgressAt = startedAt;
-        lastIncumbentKey = null;
         scheduleBatch();
     } catch (error) {
         finishError(error);
@@ -84,19 +90,7 @@ function runBatch() {
             search.step(STATES_PER_STEP);
         } while (!search.isComplete() && performance.now() < deadline);
 
-        const best = search.getBest();
-        if (best && firstSolutionMs === null) {
-            firstSolutionMs = performance.now() - startedAt;
-        }
-        // 初始化阶段也可能已建立 best，是否上报只能由该布局是否曾发送决定。
-        if (best && best.layoutKey !== lastIncumbentKey) {
-            lastIncumbentKey = best.layoutKey;
-            self.postMessage({
-                type: 'incumbent',
-                result: serializeResult(best, RESULT_STATUS.BEST_KNOWN),
-                stats: createStats(),
-            });
-        }
+        postIncumbentIfNeeded();
 
         const now = performance.now();
         if (now - lastProgressAt >= PROGRESS_INTERVAL_MS) {
@@ -112,6 +106,30 @@ function runBatch() {
     } catch (error) {
         finishError(error);
     }
+}
+
+/**
+ * 初始化阶段已经可能建立当前最佳；暂停和每个搜索批次都应发布一次最新布局，
+ * 同一 layoutKey 只发送一次以避免无意义的主线程绘制。
+ */
+function postIncumbentIfNeeded() {
+    const best = search && search.getBest();
+    if (!best) {
+        return;
+    }
+    if (firstSolutionMs === null) {
+        firstSolutionMs = performance.now() - startedAt;
+    }
+    if (best.layoutKey === lastIncumbentKey) {
+        return;
+    }
+
+    lastIncumbentKey = best.layoutKey;
+    self.postMessage({
+        type: 'incumbent',
+        result: serializeResult(best, RESULT_STATUS.BEST_KNOWN),
+        stats: createStats(),
+    });
 }
 
 function finishCompleted() {

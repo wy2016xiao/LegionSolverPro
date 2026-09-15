@@ -164,6 +164,14 @@ form {
 }
 
 @media (max-width: 600px) {
+    #legionWrapper {
+        flex-direction: column;
+    }
+
+    #legionBoard {
+        width: max-content;
+    }
+
     #legionFooter {
         flex-direction: column;
         align-items: flex-start;

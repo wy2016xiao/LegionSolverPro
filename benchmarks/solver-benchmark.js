@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 
 import { buildProblem } from '../src/modules/solver/problem.js';
-import { createSearch } from '../src/modules/solver/search.js';
+import {
+    createSearch,
+    INTERACTIVE_SEARCH_OPTIONS,
+} from '../src/modules/solver/search.js';
 import { fixtures } from './fixtures.js';
 
 const RUNS = 5;
@@ -15,7 +18,8 @@ for (const fixture of fixtures) {
         const problem = buildProblem(fixture.board, fixture.pieces, {
             centerCells: fixture.centerCells,
         });
-        const search = createSearch(problem, fixture.objective);
+        // 与浏览器 Worker 使用同一初始化预算，保证基准反映真实交互路径。
+        const search = createSearch(problem, fixture.objective, INTERACTIVE_SEARCH_OPTIONS);
         const firstSolutionMs = search.getBest() ? performance.now() - startedAt : null;
 
         while (!search.isComplete() && performance.now() - startedAt < MAX_RUN_MS) {

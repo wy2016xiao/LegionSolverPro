@@ -4,6 +4,12 @@ import { pieceColours, pieces } from './pieces.js';
 import { i18n } from './i18n.js';
 import { OBJECTIVES, RESULT_STATUS } from './modules/solver/constants.js';
 import { formatResultSummary, normalizeObjective } from './modules/solver/ui-state.js';
+import {
+    pauseSolverUi,
+    secondaryControlForState,
+    shouldDrawIncumbent,
+    stopSolverUi,
+} from './modules/solver/ui-controls.js';
 
 let board = JSON.parse(localStorage.getItem("legionBoard"));
 if (!board) {
@@ -26,6 +32,7 @@ const states = {
     START: 'start',
     RUNNING: 'running',
     PAUSED: 'paused',
+    STOPPING: 'stopping',
     COMPLETED: 'completed',
 }
 let state = states.START;
@@ -70,7 +77,7 @@ document.getElementById("bigClick").addEventListener("click", activateBigClick);
 document.getElementById("liveSolve").addEventListener("click", activateLiveSolve);
 document.getElementById("clearBoard").addEventListener("click", clearBoard);
 document.getElementById("boardButton").addEventListener("click", handleButton);
-document.getElementById("resetButton").addEventListener("click", reset);
+document.getElementById("resetButton").addEventListener("click", handleSecondaryButton);
 document.getElementById("darkMode").addEventListener("click", activateDarkMode);
 for (const input of document.querySelectorAll('input[name="objective"]')) {
     input.addEventListener('change', event => {
@@ -441,7 +448,9 @@ function reset() {
     activeRunId++;
     resetBoard();
     document.getElementById("clearBoard").disabled = false;
+    document.getElementById("boardButton").disabled = false;
     document.getElementById("boardButton").innerText = i18n("start");
+    document.getElementById("resetButton").innerText = i18n("reset");
     document.getElementById("resetButton").style.visibility = 'hidden';
     document.getElementById("iterations").style.visibility = 'hidden';
     document.getElementById("time").style.visibility = 'hidden';
@@ -465,20 +474,19 @@ async function handleButton(evt) {
             if (runId !== activeRunId) {
                 break;
             }
+            evt.target.disabled = false;
             evt.target.innerText = i18n("reset");
             state = states.COMPLETED;
             break;
         }
         case states.RUNNING:
             evt.target.innerText = i18n("continue");
-            for (const solver of legionSolvers) {
-                solver.pause();
-            }
+            pauseSolverUi(legionSolvers, { renderStats, drawBoard });
             state = states.PAUSED;
+            document.getElementById("resetButton").innerText = i18n(
+                secondaryControlForState(state).labelKey,
+            );
             document.getElementById("resetButton").style.visibility = 'visible';
-            if (legionSolvers[0]) {
-                renderStats(legionSolvers[0].stats);
-            }
             break;
         case states.PAUSED:
             evt.target.innerText = i18n("pause");
@@ -492,6 +500,18 @@ async function handleButton(evt) {
             reset();
             break;
     }
+}
+
+function handleSecondaryButton() {
+    const control = secondaryControlForState(state);
+    if (control.action === 'stop') {
+        stopSolverUi(legionSolvers);
+        state = states.STOPPING;
+        document.getElementById("boardButton").disabled = true;
+        document.getElementById("resetButton").style.visibility = 'hidden';
+        return;
+    }
+    reset();
 }
 
 async function runSolver() {
@@ -532,7 +552,8 @@ function onBoardUpdated(result, stats) {
     renderStats(stats);
 
     const now = Date.now();
-    if (isLiveSolve && now - lastLiveDraw >= 100) {
+    if (shouldDrawIncumbent(isLiveSolve, state)
+        && (state === states.PAUSED || now - lastLiveDraw >= 100)) {
         lastLiveDraw = now;
         drawBoard();
     }

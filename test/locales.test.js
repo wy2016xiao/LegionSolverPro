@@ -16,6 +16,7 @@ const solverKeys = [
     'resultUsed',
     'cellUnit',
     'pieceUnit',
+    'stop',
 ];
 
 test('every supported locale defines the solver UI contract', () => {

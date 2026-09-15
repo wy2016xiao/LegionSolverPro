@@ -43,7 +43,7 @@
 - Create: `src/modules/solver/score.js`
 - Create: `test/score.test.js`
 
-- [ ] **Step 1: 添加跨平台测试和基准脚本**
+- [x] **Step 1: 添加跨平台测试和基准脚本**
 
 在 `package.json` 的 `scripts` 中加入 Node 自动发现测试的命令，避免依赖 shell glob：
 
@@ -59,9 +59,9 @@
 }
 ```
 
-- [ ] **Step 2: 先写评分失败测试**
+- [x] **Step 2: 先写评分失败测试**
 
-`test/score.test.js` 覆盖两个冲突解和稳定键：
+`test/score.test.js` 覆盖两个冲突解，并明确布局序列化键不是第三个业务目标：
 
 ```js
 import test from 'node:test';
@@ -80,20 +80,20 @@ test('piece-first prefers more placed pieces', () => {
   assert.ok(compareSolutions(morePieces, moreCells, OBJECTIVES.PIECES) > 0);
 });
 
-test('layout key gives deterministic tie breaking', () => {
+test('layout serialization is not a third business objective', () => {
   const left = { coveredCells: 10, placedPieces: 3, layoutKey: 'a' };
   const right = { coveredCells: 10, placedPieces: 3, layoutKey: 'b' };
-  assert.ok(compareSolutions(left, right, OBJECTIVES.COVERAGE) > 0);
+  assert.equal(compareSolutions(left, right, OBJECTIVES.COVERAGE), 0);
 });
 ```
 
-- [ ] **Step 3: 运行测试并确认红灯**
+- [x] **Step 3: 运行测试并确认红灯**
 
 Run: `npm test`
 
 Expected: FAIL，提示找不到 `src/modules/solver/constants.js` 或 `score.js`。
 
-- [ ] **Step 4: 实现常量和评分器**
+- [x] **Step 4: 实现常量和评分器**
 
 `constants.js` 使用单一规范值：
 
@@ -126,11 +126,13 @@ export function compareSolutions(left, right, objective) {
   for (const field of fields) {
     if (left[field] !== right[field]) return left[field] - right[field];
   }
-  return right.layoutKey.localeCompare(left.layoutKey);
+  return 0;
 }
 ```
 
-- [ ] **Step 5: 运行测试并检查 diff**
+`layoutKey` 仍用于确定性候选顺序、缓存和 Worker 消息去重；业务评分相同时保留确定性搜索首先找到的布局，不为最小化字符串增加额外搜索。
+
+- [x] **Step 5: 运行测试并检查 diff**
 
 Run: `npm test && git diff --check`
 
@@ -144,7 +146,7 @@ Expected: 3 tests PASS，`git diff --check` 无输出。
 - Create: `test/bitset.test.js`
 - Create: `test/problem.test.js`
 
-- [ ] **Step 1: 写位图行为测试**
+- [x] **Step 1: 写位图行为测试**
 
 ```js
 import test from 'node:test';
@@ -165,13 +167,13 @@ test('bitset supports boards larger than 32 cells', () => {
 });
 ```
 
-- [ ] **Step 2: 运行位图测试并确认红灯**
+- [x] **Step 2: 运行位图测试并确认红灯**
 
 Run: `node --test test/bitset.test.js`
 
 Expected: FAIL，提示缺少 `bitset.js`。
 
-- [ ] **Step 3: 实现无分配热路径位图函数**
+- [x] **Step 3: 实现无分配热路径位图函数**
 
 `bitset.js` 至少导出以下纯函数；`intersects` 和 `unionInto` 的循环中不得创建临时数组：
 
@@ -209,7 +211,7 @@ export function popcount(mask) {
 export const maskKey = mask => Array.from(mask, word => word.toString(36)).join('.');
 ```
 
-- [ ] **Step 4: 写姿态与摆法预计算测试**
+- [x] **Step 4: 写姿态与摆法预计算测试**
 
 测试要求：方块旋转后只有一种姿态；L 形包含镜像和旋转；所有摆法只覆盖目标格；锚点坐标随变换保留。
 
@@ -234,7 +236,7 @@ test('placements stay inside selected target cells', () => {
 });
 ```
 
-- [ ] **Step 5: 实现问题预计算**
+- [x] **Step 5: 实现问题预计算**
 
 `problem.js` 提供以下稳定契约：
 
@@ -288,7 +290,7 @@ export function buildProblem(board, pieces, options = {}) {
 
 实现时用包含锚点标志的坐标字符串去重姿态；把所有非零形状格平移到左上角。原数据允许一个形状包含多个数值为 `2` 的格子，这些格子都必须保留为锚点候选；其他非零值是普通格。默认中心是 20×22 棋盘的 `(10,9)`、`(11,9)`、`(10,10)`、`(11,10)`，测试可通过 `options.centerCells` 覆盖。
 
-- [ ] **Step 6: 运行预计算测试**
+- [x] **Step 6: 运行预计算测试**
 
 Run: `node --test test/bitset.test.js test/problem.test.js && git diff --check`
 
@@ -301,7 +303,7 @@ Expected: 全部 PASS，无格式错误。
 - Create: `test/search.test.js`
 - Create: `src/modules/solver/search.js`
 
-- [ ] **Step 1: 实现仅供测试的小棋盘独立穷举器**
+- [x] **Step 1: 实现仅供测试的小棋盘独立穷举器**
 
 `brute-force.js` 不复用生产搜索和剪枝，只枚举所有不重叠摆法子集，过滤中心锚点和四向连通，返回两个模式各自的最佳评分。它只接收不超过 12 个摆法的 fixture，防止测试自身失控。
 
@@ -366,7 +368,7 @@ function isConnected(occupied, neighborsByIndex) {
 }
 ```
 
-- [ ] **Step 2: 写两个优化目标冲突和空白测试**
+- [x] **Step 2: 写两个优化目标冲突和空白测试**
 
 fixture 使用 5 个横向目标格、一个 4 格长条和多个单格积木，使两个目标产生不同结果；再加入面积少于目标和库存多于目标的案例。
 
@@ -385,13 +387,13 @@ test('search matches brute force for both objectives', () => {
 });
 ```
 
-- [ ] **Step 3: 运行搜索测试并确认红灯**
+- [x] **Step 3: 运行搜索测试并确认红灯**
 
 Run: `node --test test/search.test.js`
 
 Expected: FAIL，提示缺少 `search.js`。
 
-- [ ] **Step 4: 实现可分批搜索状态机**
+- [x] **Step 4: 实现可分批搜索状态机**
 
 `search.js` 的公开接口固定为：
 
@@ -416,7 +418,7 @@ export function solveToCompletion(problem, objective) {
 
 每个节点都形成合法连通解并可更新 incumbent。候选以“稀缺格优先、当前主目标增益、`layoutKey`”排序。缓存键为 `maskKey(occupied) + '|' + remaining.join(',')`，值记录到达该状态的最小布局键，防止不同放置顺序重复展开同时保持确定性结果。
 
-- [ ] **Step 5: 加入安全上界剪枝**
+- [x] **Step 5: 加入安全上界剪枝**
 
 对节点计算：
 
@@ -430,7 +432,7 @@ const maxExtraCells = Math.min(
 
 把当前分数加上乐观增量后与 incumbent 比较；只有词典序上界也无法超过 incumbent 才剪枝。随后增加“剩余合法摆法覆盖并集”和“从当前邻接边界可达区域”上界，并为每一种上界写一个与 `bruteForce` 对照的测试。
 
-- [ ] **Step 6: 用生成的小棋盘做最优性回归**
+- [x] **Step 6: 用生成的小棋盘做最优性回归**
 
 枚举固定种子的 3×3/4×3 目标掩码和小库存；跳过摆法数超过 12 的输入；对两个目标比较生产搜索与独立穷举的完整 `{coveredCells, placedPieces}`。
 
@@ -438,7 +440,7 @@ Run: `node --test test/search.test.js`
 
 Expected: 两种目标的所有固定 fixture 均与独立穷举一致，重复运行布局键一致。
 
-- [ ] **Step 7: 全量 Core 测试和 diff 检查**
+- [x] **Step 7: 全量 Core 测试和 diff 检查**
 
 Run: `npm test && git diff --check`
 
@@ -451,7 +453,7 @@ Expected: 全部 PASS。
 - Rewrite: `src/modules/legion_solver.js`
 - Create: `test/solver-contract.test.js`
 
-- [ ] **Step 1: 写客户端消息契约测试**
+- [x] **Step 1: 写客户端消息契约测试**
 
 用注入的 `FakeWorker` 断言 `solve()` 发出 `start`，`pause()`/`continue()`/`stop()` 发出对应命令，`incumbent` 更新只接受分数更好的结果，`completed` resolve 最终 Promise。
 
@@ -466,13 +468,13 @@ fakeWorker.emit({ type: 'completed', result });
 assert.deepEqual(await promise, result);
 ```
 
-- [ ] **Step 2: 运行契约测试并确认红灯**
+- [x] **Step 2: 运行契约测试并确认红灯**
 
 Run: `node --test test/solver-contract.test.js`
 
 Expected: FAIL，因为旧 `LegionSolver` 不支持 Worker 契约。
 
-- [ ] **Step 3: 实现 Worker 分批运行**
+- [x] **Step 3: 实现 Worker 分批运行**
 
 `solver.worker.js`：
 
@@ -500,7 +502,7 @@ function runBatch() {
 
 消息必须捕获输入校验和异常，分别返回 `invalid` 或 `error`，并保证一次搜索只结束一次。
 
-- [ ] **Step 4: 重写 `LegionSolver` 为客户端门面**
+- [x] **Step 4: 重写 `LegionSolver` 为客户端门面**
 
 默认 Worker 工厂使用 Webpack 5 兼容写法：
 
@@ -510,7 +512,7 @@ function runBatch() {
 
 门面保留 `solve()`、`pause()`、`continue()`、`stop()`、`iterations`、`time`、`board` 和 `history`。Worker 布局通过单一 `applyResultToBoard()` 转为原颜色 ID 规则，锚点格仍使用 `pieceId + 18`，避免改变棋盘显示。
 
-- [ ] **Step 5: 运行 Worker 客户端契约测试**
+- [x] **Step 5: 运行 Worker 客户端契约测试**
 
 Run: `node --test test/solver-contract.test.js && npm test && git diff --check`
 
@@ -529,7 +531,7 @@ Expected: 全部 PASS，无未处理 Promise rejection。
 - Modify: `src/locales/tw.js`
 - Modify: `src/board.js`
 
-- [ ] **Step 1: 添加最小化单选 UI**
+- [x] **Step 1: 添加最小化单选 UI**
 
 在 `#options` 内添加：
 
@@ -544,7 +546,7 @@ Expected: 全部 PASS，无未处理 Promise rejection。
 
 CSS 使用现有字号和颜色，不设固定宽度；窄屏时允许两项换行；`fieldset` 使用透明背景和当前文字色。
 
-- [ ] **Step 2: 接入规范存储键和 i18n**
+- [x] **Step 2: 接入规范存储键和 i18n**
 
 `board.js` 只使用 `legionSolverObjective` 这一键：
 
@@ -557,7 +559,7 @@ let objective = Object.values(OBJECTIVES).includes(savedObjective)
 
 切换时更新内存和 `localStorage`。`i18n.js` 填充 `objectiveLegend`、`coverageObjective`、`piecesObjective` 和结果文案。五个 locale 使用对应语言，不保留英文 fallback 链。
 
-- [ ] **Step 3: 简化 `runSolver()`**
+- [x] **Step 3: 简化 `runSolver()`**
 
 删除旧版为四个棋盘方向创建四套求解器并 `Promise.race` 的逻辑，只创建一个 Worker 客户端：
 
@@ -570,11 +572,11 @@ renderResult(result, solver.stats);
 
 `renderResult()` 按状态展示“覆盖 x/y 格、使用 a/b 块、最优解/当前最佳”。`Live Solve` 只在 incumbent 改善时重绘，并以 100ms 为最小间隔。重置时终止 Worker 并恢复目标格，不留下已放颜色。
 
-- [ ] **Step 4: 更新使用说明**
+- [x] **Step 4: 更新使用说明**
 
 删除“积木面积必须等于所选格子，否则死循环”的旧说明，明确数量是可用上限、允许空白，并说明两个优化目标。
 
-- [ ] **Step 5: 定向构建验证**
+- [x] **Step 5: 定向构建验证**
 
 Run: `npm test && npx webpack --config webpack.config.dev.cjs && git diff --check`
 
@@ -588,11 +590,11 @@ Expected: 测试 PASS；Webpack 无模块解析或 Worker chunk 错误；diff �
 - Modify: `src/modules/solver/search.js`
 - Modify: `src/modules/solver/problem.js`
 
-- [ ] **Step 1: 固化六类基准输入**
+- [x] **Step 1: 固化六类基准输入**
 
 `fixtures.js` 导出普通完全覆盖、复杂完全覆盖、目标比积木多 1 格、目标比积木多 4 格、重复积木、无中心起步。每个 fixture 包含固定棋盘、库存、模式和预期最佳评分；预期评分先由正确性测试或小规模可验证构造确认，不从新版输出反向抄写。
 
-- [ ] **Step 2: 实现可重复基准脚本**
+- [x] **Step 2: 实现可重复基准脚本**
 
 ```js
 for (const fixture of fixtures) {
@@ -609,19 +611,19 @@ for (const fixture of fixtures) {
 
 同时打印首解时间、最优证明时间、展开状态数、缓存命中、剪枝数和最终评分。脚本任一评分错误时以非零状态退出。
 
-- [ ] **Step 3: 记录初始新版基准**
+- [x] **Step 3: 记录初始新版基准**
 
 Run: `npm run benchmark`
 
 Expected: 所有 fixture 评分正确并输出结构化指标；若某例超过 10 秒，脚本中止该例并明确报告未达标，不挂死 CI 或本地终端。
 
-- [ ] **Step 4: 逐项优化已测得的热路径**
+- [x] **Step 4: 逐项优化已测得的热路径**
 
 按 profile 证据依次考虑：候选表按库存和邻接增量过滤、位图对象复用、缓存键减少序列化、候选排序结果缓存、剩余覆盖并集上界、空白分量面积可达表。每引入一个剪枝，先新增与独立穷举器对照的测试，再保留该优化。
 
 不得仅为追求基准而引入无完备性证明的硬剪枝；此类规则只能改变候选顺序。
 
-- [ ] **Step 5: 验证性能门槛和确定性**
+- [x] **Step 5: 验证性能门槛和确定性**
 
 Run: `npm test && npm run benchmark && git diff --check`
 
@@ -633,11 +635,11 @@ Expected: 普通用例即时完成；旧版慢例在 250ms 内提供首个合法
 - Modify: `README.md`
 - Modify only if defects are found: files changed in Tasks 1–6
 
-- [ ] **Step 1: 更新 README**
+- [x] **Step 1: 更新 README**
 
 记录：默认格子覆盖优先、两种词典序、允许空白/剩余积木、结果状态含义、Worker 不阻塞 UI，以及 `npm test`、`npm run benchmark`、`npm run dev` 命令。不要声称所有输入都能在固定时间内证明最优。
 
-- [ ] **Step 2: 启动本地开发服务器**
+- [x] **Step 2: 启动本地开发服务器**
 
 Run: `npm run dev`
 
@@ -651,7 +653,9 @@ Expected: Webpack dev server 启动成功；`webpack.config.dev.cjs` 固定 `ope
 
 验证：目标选项可见可点、标签不截断、棋盘原有横向行为不恶化、按钮和结果区不重叠。若内置浏览器不可用，改用 HTTP 黑盒、构建和 DOM 测试，并在交付中明确未完成视觉验收，不回退到 Chrome。
 
-- [ ] **Step 5: 最终自动化验证**
+2026-09-15 验收记录：Codex App 内置浏览器返回 `Codex auth token is unavailable`，因此步骤 3、4 保持未勾选；已按项目规则完成 HTTP 黑盒、自动化测试和开发构建，未回退到 Chrome 或外部 Playwright。
+
+- [x] **Step 5: 最终自动化验证**
 
 Run: `npm test && npm run benchmark && npx webpack --config webpack.config.dev.cjs && git diff --check`
 
@@ -662,3 +666,5 @@ Expected: 测试、基准评分和开发构建通过，diff 无空白错误。
 Run: `git status --short && git diff --stat && git diff`
 
 Expected: 只有规格、计划和本任务实现文件发生变化；无 `dist`、日志、缓存、真实账号或敏感配置进入 diff；保持未暂存、未提交、未推送状态。
+
+2026-09-15 边界记录：当前未提交 diff 仅包含本任务实现、测试和文档；但远端已有的 `fbae099` 提交额外包含任务外 `personal.code-workspace`。本轮不改写已推送历史，也不擅自删除该文件，因此本步骤保持未勾选并向用户单独说明。

@@ -15,9 +15,9 @@ test('piece-first prefers more placed pieces', () => {
     assert.ok(compareSolutions(morePieces, moreCells, OBJECTIVES.PIECES) > 0);
 });
 
-test('layout key gives deterministic tie breaking', () => {
+test('layout serialization is not a third business objective', () => {
     const left = { coveredCells: 10, placedPieces: 3, layoutKey: 'a' };
     const right = { coveredCells: 10, placedPieces: 3, layoutKey: 'b' };
 
-    assert.ok(compareSolutions(left, right, OBJECTIVES.COVERAGE) > 0);
+    assert.equal(compareSolutions(left, right, OBJECTIVES.COVERAGE), 0);
 });

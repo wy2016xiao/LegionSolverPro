@@ -33,6 +33,7 @@ export default {
     start: 'スタート',
     pause: 'ポーズ',
     continue: 'コンティニュー',
+    stop: '停止',
     reset: 'リセット',
     clearPieces: 'キャラクター初期化',
     clearBoard: 'マップ初期化',

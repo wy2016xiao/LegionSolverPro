@@ -32,6 +32,7 @@ export default {
     start: '开始',
     pause: '暂停',
     continue: '继续',
+    stop: '停止',
     reset: '重置',
     clearPieces: '清除所有的拼图',
     clearBoard: '清除面板',

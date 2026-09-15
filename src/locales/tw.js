@@ -32,6 +32,7 @@ export default {
   start: '開始',
   pause: '暫停',
   continue: '繼續',
+  stop: '停止',
   reset: '重置',
   clearPieces: '清除擁有的拼圖',
   clearBoard: '清除面板',

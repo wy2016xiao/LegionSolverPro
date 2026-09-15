@@ -12,13 +12,22 @@ import { OBJECTIVES } from './constants.js';
 import { compareSolutions } from './score.js';
 
 /**
+ * Worker 启动阶段只构造有界的强下界，避免启发式初始化阻塞暂停和取消消息。
+ * 完整精确搜索仍会枚举所有未剪枝状态，因此该预算不改变最优性。
+ */
+const INTERACTIVE_SEARCH_OPTIONS = Object.freeze({
+    maxExactCoverStates: 100,
+    maxGreedySeeds: 4,
+});
+
+/**
  * 创建一个可按固定状态数分批推进的精确搜索器。
  *
  * 搜索从中心锚点摆法出发，每次固定选择当前连通边界上候选最少的格子，
  * 再决定由哪个积木覆盖它或把它留空。这样每个连通布局都有且只有确定的
  * 格子决策路径，避免按不同积木放置顺序重复枚举同一布局。
  */
-function createSearch(problem, objective) {
+function createSearch(problem, objective, options = {}) {
     if (!Object.values(OBJECTIVES).includes(objective)) {
         throw new RangeError(`Unknown objective: ${objective}`);
     }
@@ -35,11 +44,22 @@ function createSearch(problem, objective) {
             stack.push(createSeed(problem, initialRemaining, placement));
         }
     }
+    const maxExactCoverStates = normalizeInitializationLimit(
+        options.maxExactCoverStates,
+        10000,
+        'maxExactCoverStates',
+    );
+    const maxGreedySeeds = normalizeInitializationLimit(
+        options.maxGreedySeeds,
+        stack.length,
+        'maxGreedySeeds',
+    );
 
     const visited = new Map();
     const stats = {
         iterations: 0,
         initializationStates: 0,
+        initializationGreedySeeds: 0,
         generatedStates: stack.length,
         cacheHits: 0,
         prunedStates: 0,
@@ -47,14 +67,23 @@ function createSearch(problem, objective) {
     };
     let best = null;
     // 完全覆盖已经锁定格子主目标，此时优先使用小积木可同时强化数量次目标。
-    const exactCover = findExactCover(problem, stack, OBJECTIVES.PIECES, 10000);
+    const exactCover = findExactCover(
+        problem,
+        stack,
+        OBJECTIVES.PIECES,
+        maxExactCoverStates,
+    );
     stats.initializationStates = exactCover.iterations;
     if (exactCover.state) {
         const exactLayoutKey = createLayoutKey(problem, exactCover.state.placementIds);
         best = createSolution(problem, exactCover.state, exactLayoutKey);
         stats.incumbentUpdates++;
     }
-    for (const seed of stack) {
+    // 栈尾是主搜索最先展开的高优先级种子；有限预算时也保持同一顺序。
+    const firstGreedySeed = Math.max(0, stack.length - maxGreedySeeds);
+    for (let index = stack.length - 1; index >= firstGreedySeed; index--) {
+        const seed = stack[index];
+        stats.initializationGreedySeeds++;
         const greedyState = greedilyComplete(problem, seed, objective);
         const greedyLayoutKey = createLayoutKey(problem, greedyState.placementIds);
         const solution = createSolution(problem, greedyState, greedyLayoutKey);
@@ -130,6 +159,14 @@ function createSearch(problem, objective) {
         getStats: () => ({ ...stats, pendingStates: stack.length }),
         isComplete: () => stack.length === 0,
     };
+}
+
+function normalizeInitializationLimit(value, fallback, name) {
+    const limit = value === undefined ? fallback : value;
+    if (!Number.isInteger(limit) || limit < 0) {
+        throw new RangeError(`${name} must be a non-negative integer`);
+    }
+    return limit;
 }
 
 /** 为测试、基准及非 Worker 调用同步求出最优解。 */
@@ -445,4 +482,4 @@ function maxPiecesForCapacity(problem, remaining, capacity) {
     return result;
 }
 
-export { createSearch, solveToCompletion };
+export { createSearch, INTERACTIVE_SEARCH_OPTIONS, solveToCompletion };

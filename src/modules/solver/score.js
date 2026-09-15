@@ -3,8 +3,8 @@ import { OBJECTIVES } from './constants.js';
 /**
  * 按指定优化目标比较两个合法解。
  *
- * 返回正数表示 left 更优，负数表示 right 更优，0 表示完全相同。
- * 布局键只用于确保相同业务评分下的结果可复现。
+ * 返回正数表示 left 更优，负数表示 right 更优，0 表示业务评分相同。
+ * layoutKey 是确定性搜索和消息去重标识，不代表额外的游戏收益目标。
  */
 function compareSolutions(left, right, objective) {
     if (!right) {
@@ -21,7 +21,7 @@ function compareSolutions(left, right, objective) {
         }
     }
 
-    return right.layoutKey.localeCompare(left.layoutKey);
+    return 0;
 }
 
 export { compareSolutions };
