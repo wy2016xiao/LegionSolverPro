@@ -2,6 +2,10 @@
 
 冒险岛联盟积木自动摆放工具。项目保留原版棋盘、积木数据和主要操作方式，重点重写了求解器的搜索模型和运行方式。
 
+## 在线使用
+
+[打开 LegionSolverPro](https://wy2016xiao.github.io/LegionSolverPro/)
+
 ## 优化目标
 
 页面提供两个可持久化的优化目标：
@@ -50,3 +54,9 @@ npm run build
 ```
 
 生产文件输出到 `dist/prod`。项目许可证沿用 `package.json` 中的 ISC 声明。
+
+## GitHub Pages 部署
+
+推送到 `master` 后，GitHub Actions 会依次安装依赖、运行测试、构建 `dist/prod`，再发布到上面的免费 GitHub Pages 地址。也可以从 Actions 页面手动触发部署。
+
+由于本仓库是 fork，首次发布前需要在仓库的 Actions 页面启用工作流，并在 `Settings → Pages → Build and deployment → Source` 中选择 `GitHub Actions`。
