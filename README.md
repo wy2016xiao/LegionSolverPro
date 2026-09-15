@@ -1,62 +1,62 @@
 # LegionSolverPro
 
-冒险岛联盟积木自动摆放工具。项目保留原版棋盘、积木数据和主要操作方式，重点重写了求解器的搜索模型和运行方式。
+An automatic MapleStory Legion block placement tool. The project preserves the original board, block data, and primary interactions while replacing the solver's search model and execution architecture.
 
-## 在线使用
+## Online Version
 
-[打开 LegionSolverPro](https://wy2016xiao.github.io/LegionSolverPro/)
+[Open LegionSolverPro](https://wy2016xiao.github.io/LegionSolverPro/)
 
-## 优化目标
+## Optimization Objectives
 
-页面提供两个可持久化的优化目标：
+The page provides two persistent optimization objectives:
 
-- **格子覆盖优先（默认）**：先让选中区域的空白最少；覆盖格数相同时，再放入更多积木。
-- **积木数量优先**：先放入更多积木；积木数相同时，再覆盖更多选中格。
+- **Cell Coverage First (default):** Minimize uncovered selected cells first, then place more blocks when coverage is tied.
+- **Piece Count First:** Place more blocks first, then cover more selected cells when the number of placed blocks is tied.
 
-输入数量表示对应形状的可用上限。积木总面积与选中格数不相等时，求解器允许留下空白或未使用积木。
+Each input count is the maximum available inventory for that shape. When the total block area differs from the number of selected cells, the solver may leave selected cells uncovered or leave blocks unused.
 
-只有上述两个业务指标参与最优性判断。业务评分完全相同时，求解器按确定性搜索顺序稳定返回一个布局；`layoutKey` 只用于缓存、去重和复现，不作为第三个优化目标。
+Only these two business metrics determine optimality. When both scores are tied, the solver returns the first layout found by its deterministic search order. `layoutKey` is used only for caching, deduplication, and reproducibility; it is not a third optimization objective.
 
-结果中的“最优解”表示搜索已经完成或通过安全上界证明不存在更好布局。暂停会显示当前最佳布局；此时点击“停止”会取消剩余搜索并保留该布局，标记为尚未完成证明的“当前最佳”，之后仍可重置。
+An **Optimal** result means the search has finished or a safe upper bound has proven that no better layout exists. Pausing displays the current best layout. Selecting **Stop** while paused cancels the remaining search and preserves that layout as **Best Known**, which means optimality has not yet been proven. The board can still be reset afterward.
 
-## 求解器架构
+## Solver Architecture
 
-- `Uint32Array` 位图表示棋盘占用状态。
-- 预生成并去重所有合法旋转、镜像和摆放位置。
-- 以中心锚点为起点，使用边界格 MRV、branch-and-bound、面积整除上界、库存上界和状态缓存。
-- 先进行受限完整覆盖搜索与贪心布局，快速建立可用于剪枝的当前最佳解。
-- 搜索运行在 Web Worker 中，暂停、继续和页面绘制不再与搜索循环争用主线程。
+- Board occupancy is represented with `Uint32Array` bitsets.
+- All legal rotations, reflections, and placements are generated and deduplicated in advance.
+- Search starts from a center anchor and uses frontier-cell MRV, branch-and-bound, area-divisibility bounds, inventory bounds, and state caching.
+- A bounded exact-cover pass and greedy layouts establish a strong incumbent early for pruning.
+- Search runs in a Web Worker, so pause, resume, and rendering no longer compete with the search loop on the main thread.
 
-## 本地运行
+## Local Development
 
 ```bash
 npm install
 npm run dev
 ```
 
-开发服务器不会自动打开系统浏览器。默认地址为 `http://localhost:8080/`。
+The development server does not open a system browser automatically. Its default address is `http://localhost:8080/`.
 
-## 验证
+## Verification
 
 ```bash
 npm test
 npm run benchmark
 ```
 
-测试包含双目标冲突、允许空白、剩余库存、中心锚点、连通性、Worker 消息契约，以及生产搜索器与独立小棋盘穷举器的最优结果对照。
+The test suite covers conflicting objectives, permitted blanks, unused inventory, center anchors, connectivity, the Worker message contract, and comparisons between the production search and an independent brute-force oracle on small boards.
 
-基准包含 160 格完整覆盖、159 格部分覆盖、库存不足、混合积木尺寸和原项目五种 200 级积木形状。基准会同时校验最优评分，并在单个用例超过 2 秒时失败；这不是对任意输入都能在固定时间内完成最优证明的承诺。
+The benchmark suite includes a 160-cell exact cover, a 159-cell partial cover, insufficient inventory, mixed block sizes, and the original project's five level-200 block shapes. It verifies the optimal score and fails if an individual fixture exceeds two seconds. This is not a guarantee that every possible input can be proven optimal within a fixed time.
 
-## 构建
+## Production Build
 
 ```bash
 npm run build
 ```
 
-生产文件输出到 `dist/prod`。项目许可证沿用 `package.json` 中的 ISC 声明。
+Production assets are written to `dist/prod`. The project retains the ISC license declared in `package.json`.
 
-## GitHub Pages 部署
+## GitHub Pages Deployment
 
-推送到 `master` 后，GitHub Actions 会依次安装依赖、运行测试、构建 `dist/prod`，再发布到上面的免费 GitHub Pages 地址。也可以从 Actions 页面手动触发部署。
+Every push to `master` makes GitHub Actions install dependencies, run the tests, build `dist/prod`, and deploy the result to the free GitHub Pages URL above. The workflow can also be started manually from the Actions page.
 
-由于本仓库是 fork，首次发布前需要在仓库的 Actions 页面启用工作流，并在 `Settings → Pages → Build and deployment → Source` 中选择 `GitHub Actions`。
+For a new fork, enable workflows from the repository's Actions page and select `GitHub Actions` under `Settings → Pages → Build and deployment → Source` before the first deployment.

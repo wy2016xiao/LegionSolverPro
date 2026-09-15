@@ -1,51 +1,52 @@
 # LegionSolverPro Speed Optimization Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` (recommended) or `superpowers:executing-plans` to implement this plan task by task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 在保持联盟规则、现有棋盘交互和积木数据不变的前提下，以可证明最优的双目标搜索器替换旧回溯，并通过 Web Worker 消除页面卡顿。
+**Goal:** Replace the old backtracking solver with a provably optimal dual-objective search while preserving Legion rules, the existing board interactions, and block data. Move search into a Web Worker to keep the page responsive.
 
-**Architecture:** 新增不依赖 DOM 的纯 JavaScript Solver Core，以紧凑位图、合法摆法预计算、中心连通扩展、词典序 branch-and-bound 和状态缓存求解；原 `LegionSolver` 变为 Worker 客户端门面。UI 只负责收集输入、选择优化目标和渲染 Worker 返回的当前最佳或最优布局。
+**Architecture:** Add a pure JavaScript Solver Core with no DOM dependency. It uses compact bitsets, legal-placement precomputation, center-connected expansion, lexicographic branch-and-bound, and state caching. The existing `LegionSolver` becomes a Worker client facade. The UI only collects input, selects an optimization objective, and renders the incumbent or proven-optimal layout returned by the Worker.
 
-**Tech Stack:** JavaScript ES modules、Webpack 5 Web Worker、Node.js 内置 `node:test`、现有 HTML/CSS/i18n。
+**Tech Stack:** JavaScript ES modules, Webpack 5 Web Workers, Node.js built-in `node:test`, and the existing HTML/CSS/i18n stack.
 
 ---
 
-> Git 说明：项目规则禁止在用户未明确要求时执行 `git add` 或 `git commit`，因此本计划以 `git diff` 检查点替代技能模板中的提交步骤。
+> Git note: Project rules require explicit user approval before `git add` or `git commit`. During implementation, this plan therefore used `git diff` checkpoints in place of the commit steps from the skill template. The completed implementation was committed only after the user explicitly requested it.
 
-## 文件结构
+## File Structure
 
-新建：
+Create:
 
-- `src/modules/solver/constants.js`：优化目标、结果状态和 Worker 消息常量。
-- `src/modules/solver/score.js`：唯一的词典序评分实现。
-- `src/modules/solver/bitset.js`：棋盘位图的纯函数操作。
-- `src/modules/solver/problem.js`：姿态去重、目标格压缩和合法摆法预计算。
-- `src/modules/solver/search.js`：可分批执行、可暂停的精确搜索状态机。
-- `src/modules/solver/solver.worker.js`：Worker 命令循环和消息封装。
-- `test/score.test.js`、`test/bitset.test.js`、`test/problem.test.js`、`test/search.test.js`：Solver Core 单元和最优性测试。
-- `test/helpers/brute-force.js`：只服务于小棋盘的独立真值求解器。
-- `benchmarks/fixtures.js`、`benchmarks/solver-benchmark.js`：固定性能基准。
+- `src/modules/solver/constants.js`: Optimization objectives, result states, and Worker message constants.
+- `src/modules/solver/score.js`: The single lexicographic scoring implementation.
+- `src/modules/solver/bitset.js`: Pure board-bitset operations.
+- `src/modules/solver/problem.js`: Orientation deduplication, target-cell compression, and legal-placement precomputation.
+- `src/modules/solver/search.js`: A resumable exact-search state machine.
+- `src/modules/solver/solver.worker.js`: Worker command loop and message adapter.
+- `test/score.test.js`, `test/bitset.test.js`, `test/problem.test.js`, and `test/search.test.js`: Solver Core unit and optimality tests.
+- `test/helpers/brute-force.js`: An independent small-board oracle used only by tests.
+- `benchmarks/fixtures.js` and `benchmarks/solver-benchmark.js`: Fixed performance fixtures and benchmark runner.
 
-修改：
+Modify:
 
-- `src/modules/legion_solver.js`：替换为兼容现有调用方式的 Worker 客户端。
-- `src/board.js`：去掉四套旋转求解器，接入目标选择、状态和结果统计。
-- `src/index.html`、`src/styles.css`：增加最小化的优化目标与结果状态 UI。
-- `src/i18n.js`、`src/locales/{cn,en,ja,ko,tw}.js`：新增文案并修正“面积必须相等”的过期说明。
-- `package.json`：增加跨平台测试和基准命令。
-- `README.md`：记录双目标、Worker 和本地验证命令。
+- `src/modules/legion_solver.js`: Replace the implementation with a Worker client compatible with existing callers.
+- `src/board.js`: Remove the four rotated solver instances and connect the objective, state, and result summary.
+- `src/index.html` and `src/styles.css`: Add minimal objective and result-state UI.
+- `src/i18n.js` and `src/locales/{cn,en,ja,ko,tw}.js`: Add copy and remove the obsolete equal-area requirement.
+- `package.json`: Add cross-platform test and benchmark commands.
+- `README.md`: Document the objectives, Worker architecture, and local verification commands.
 
-### Task 1: 建立测试入口和评分契约
+### Task 1: Establish the Test Entry Point and Scoring Contract
 
 **Files:**
+
 - Modify: `package.json`
 - Create: `src/modules/solver/constants.js`
 - Create: `src/modules/solver/score.js`
 - Create: `test/score.test.js`
 
-- [x] **Step 1: 添加跨平台测试和基准脚本**
+- [x] **Step 1: Add cross-platform test and benchmark scripts**
 
-在 `package.json` 的 `scripts` 中加入 Node 自动发现测试的命令，避免依赖 shell glob：
+Add Node's automatic test discovery to `package.json` so the project does not depend on shell glob behavior:
 
 ```json
 {
@@ -59,9 +60,9 @@
 }
 ```
 
-- [x] **Step 2: 先写评分失败测试**
+- [x] **Step 2: Write failing scoring tests first**
 
-`test/score.test.js` 覆盖两个冲突解，并明确布局序列化键不是第三个业务目标：
+Cover conflicting solutions for both objectives and explicitly prove that the serialized layout key is not a third business objective:
 
 ```js
 import test from 'node:test';
@@ -87,15 +88,15 @@ test('layout serialization is not a third business objective', () => {
 });
 ```
 
-- [x] **Step 3: 运行测试并确认红灯**
+- [x] **Step 3: Run the tests and confirm the red state**
 
 Run: `npm test`
 
-Expected: FAIL，提示找不到 `src/modules/solver/constants.js` 或 `score.js`。
+Expected: FAIL because `src/modules/solver/constants.js` or `score.js` does not exist yet.
 
-- [x] **Step 4: 实现常量和评分器**
+- [x] **Step 4: Implement constants and scoring**
 
-`constants.js` 使用单一规范值：
+`constants.js` uses one canonical value for every contract field:
 
 ```js
 export const OBJECTIVES = Object.freeze({
@@ -112,7 +113,7 @@ export const RESULT_STATUS = Object.freeze({
 });
 ```
 
-`score.js` 让正数始终表示左侧更优：
+In `score.js`, a positive result always means the left solution is better:
 
 ```js
 import { OBJECTIVES } from './constants.js';
@@ -130,23 +131,24 @@ export function compareSolutions(left, right, objective) {
 }
 ```
 
-`layoutKey` 仍用于确定性候选顺序、缓存和 Worker 消息去重；业务评分相同时保留确定性搜索首先找到的布局，不为最小化字符串增加额外搜索。
+`layoutKey` remains available for deterministic candidate order, caching, and Worker message deduplication. When business scores are tied, keep the first layout found by deterministic search rather than extending the search merely to minimize a string.
 
-- [x] **Step 5: 运行测试并检查 diff**
+- [x] **Step 5: Run the tests and inspect the diff**
 
 Run: `npm test && git diff --check`
 
-Expected: 3 tests PASS，`git diff --check` 无输出。
+Expected: Three tests PASS and `git diff --check` produces no output.
 
-### Task 2: 实现位图和问题预计算
+### Task 2: Implement Bitsets and Problem Precomputation
 
 **Files:**
+
 - Create: `src/modules/solver/bitset.js`
 - Create: `src/modules/solver/problem.js`
 - Create: `test/bitset.test.js`
 - Create: `test/problem.test.js`
 
-- [x] **Step 1: 写位图行为测试**
+- [x] **Step 1: Write bitset behavior tests**
 
 ```js
 import test from 'node:test';
@@ -167,15 +169,15 @@ test('bitset supports boards larger than 32 cells', () => {
 });
 ```
 
-- [x] **Step 2: 运行位图测试并确认红灯**
+- [x] **Step 2: Run the bitset test and confirm the red state**
 
 Run: `node --test test/bitset.test.js`
 
-Expected: FAIL，提示缺少 `bitset.js`。
+Expected: FAIL because `bitset.js` does not exist yet.
 
-- [x] **Step 3: 实现无分配热路径位图函数**
+- [x] **Step 3: Implement allocation-free hot-path bitset functions**
 
-`bitset.js` 至少导出以下纯函数；`intersects` 和 `unionInto` 的循环中不得创建临时数组：
+`bitset.js` exports at least the following pure functions. The loops in `intersects` and `unionInto` must not allocate temporary arrays:
 
 ```js
 export const createMask = bitCount => new Uint32Array(Math.ceil(bitCount / 32));
@@ -211,9 +213,9 @@ export function popcount(mask) {
 export const maskKey = mask => Array.from(mask, word => word.toString(36)).join('.');
 ```
 
-- [x] **Step 4: 写姿态与摆法预计算测试**
+- [x] **Step 4: Write orientation and placement precomputation tests**
 
-测试要求：方块旋转后只有一种姿态；L 形包含镜像和旋转；所有摆法只覆盖目标格；锚点坐标随变换保留。
+The tests require a square to have one orientation, an L-shape to include rotations and reflections, every placement to remain inside target cells, and anchor coordinates to survive transformation:
 
 ```js
 import test from 'node:test';
@@ -236,9 +238,9 @@ test('placements stay inside selected target cells', () => {
 });
 ```
 
-- [x] **Step 5: 实现问题预计算**
+- [x] **Step 5: Implement problem precomputation**
 
-`problem.js` 提供以下稳定契约：
+`problem.js` provides these stable contracts:
 
 ```js
 export function generateOrientations(shape) {
@@ -258,6 +260,7 @@ export function generateOrientations(shape) {
         for (let turn = 0; turn < turns; turn += 1) [x, y] = [-y, x];
         return { x, y, isAnchor: sourceCell.isAnchor };
       });
+
       const minX = Math.min(...transformed.map(cell => cell.x));
       const minY = Math.min(...transformed.map(cell => cell.y));
       const cells = transformed
@@ -288,24 +291,25 @@ export function buildProblem(board, pieces, options = {}) {
 }
 ```
 
-实现时用包含锚点标志的坐标字符串去重姿态；把所有非零形状格平移到左上角。原数据允许一个形状包含多个数值为 `2` 的格子，这些格子都必须保留为锚点候选；其他非零值是普通格。默认中心是 20×22 棋盘的 `(10,9)`、`(11,9)`、`(10,10)`、`(11,10)`，测试可通过 `options.centerCells` 覆盖。
+Deduplicate orientations with coordinate strings that include the anchor flag, and translate every nonzero shape cell to the top-left origin. Source data may contain multiple cells whose value is `2`; preserve every one as an anchor candidate. Other nonzero values are ordinary cells. The default center of the 20x22 board is `(10,9)`, `(11,9)`, `(10,10)`, and `(11,10)`. Tests may override it with `options.centerCells`.
 
-- [x] **Step 6: 运行预计算测试**
+- [x] **Step 6: Run precomputation tests**
 
 Run: `node --test test/bitset.test.js test/problem.test.js && git diff --check`
 
-Expected: 全部 PASS，无格式错误。
+Expected: All tests PASS with no formatting errors.
 
-### Task 3: 用小棋盘真值驱动精确搜索器
+### Task 3: Drive the Exact Search with a Small-board Oracle
 
 **Files:**
+
 - Create: `test/helpers/brute-force.js`
 - Create: `test/search.test.js`
 - Create: `src/modules/solver/search.js`
 
-- [x] **Step 1: 实现仅供测试的小棋盘独立穷举器**
+- [x] **Step 1: Implement an independent brute-force oracle for tests**
 
-`brute-force.js` 不复用生产搜索和剪枝，只枚举所有不重叠摆法子集，过滤中心锚点和四向连通，返回两个模式各自的最佳评分。它只接收不超过 12 个摆法的 fixture，防止测试自身失控。
+`brute-force.js` does not reuse production search or pruning. It enumerates every non-overlapping placement subset, filters for center anchoring and four-direction connectivity, and returns the best score for either objective. It accepts only fixtures with at most 12 placements so the test oracle cannot grow without bound.
 
 ```js
 import { createMask, intersects, unionInto, popcount } from '../../src/modules/solver/bitset.js';
@@ -368,9 +372,9 @@ function isConnected(occupied, neighborsByIndex) {
 }
 ```
 
-- [x] **Step 2: 写两个优化目标冲突和空白测试**
+- [x] **Step 2: Add conflicting-objective and permitted-blank tests**
 
-fixture 使用 5 个横向目标格、一个 4 格长条和多个单格积木，使两个目标产生不同结果；再加入面积少于目标和库存多于目标的案例。
+Use five horizontal target cells, one four-cell bar, and several single-cell blocks so the objectives choose different layouts. Add cases where inventory area is smaller than the target and where inventory exceeds the target.
 
 ```js
 test('search matches brute force for both objectives', () => {
@@ -387,15 +391,15 @@ test('search matches brute force for both objectives', () => {
 });
 ```
 
-- [x] **Step 3: 运行搜索测试并确认红灯**
+- [x] **Step 3: Run the search test and confirm the red state**
 
 Run: `node --test test/search.test.js`
 
-Expected: FAIL，提示缺少 `search.js`。
+Expected: FAIL because `search.js` does not exist yet.
 
-- [x] **Step 4: 实现可分批搜索状态机**
+- [x] **Step 4: Implement a resumable search state machine**
 
-`search.js` 的公开接口固定为：
+The public interface of `search.js` is fixed:
 
 ```js
 export function createSearch(problem, objective) {
@@ -414,13 +418,13 @@ export function solveToCompletion(problem, objective) {
 }
 ```
 
-内部显式栈节点包含 `occupied`、`remaining`、`placementIds`、`coveredCells` 和 `placedPieces`。根节点先枚举锚点落在中心的摆法；后续候选必须满足：库存仍有剩余、不与 `occupied` 相交、`neighborMask` 与 `occupied` 相交。
+Each explicit stack node contains `occupied`, `remaining`, `placementIds`, `coveredCells`, and `placedPieces`. Root states enumerate placements whose anchors are in the center. Later candidates require available inventory, no intersection with `occupied`, and an intersection between `neighborMask` and `occupied`.
 
-每个节点都形成合法连通解并可更新 incumbent。候选以“稀缺格优先、当前主目标增益、`layoutKey`”排序。缓存键为 `maskKey(occupied) + '|' + remaining.join(',')`，值记录到达该状态的最小布局键，防止不同放置顺序重复展开同时保持确定性结果。
+Every node is a legal connected solution and may update the incumbent. Sort candidates by constrained-cell scarcity, gain under the current primary objective, and `layoutKey`. The cache key is `maskKey(occupied) + '|' + remaining.join(',')`. Its value records the smallest layout key that reached the state, preventing repeated expansion through different placement orders while preserving deterministic results.
 
-- [x] **Step 5: 加入安全上界剪枝**
+- [x] **Step 5: Add safe upper-bound pruning**
 
-对节点计算：
+Calculate:
 
 ```js
 const maxExtraPieces = remaining.reduce((sum, count) => sum + count, 0);
@@ -430,32 +434,33 @@ const maxExtraCells = Math.min(
 );
 ```
 
-把当前分数加上乐观增量后与 incumbent 比较；只有词典序上界也无法超过 incumbent 才剪枝。随后增加“剩余合法摆法覆盖并集”和“从当前邻接边界可达区域”上界，并为每一种上界写一个与 `bruteForce` 对照的测试。
+Compare the current score plus optimistic gains with the incumbent. Prune only if the lexicographic upper bound cannot beat the incumbent. Then add bounds for the union of cells covered by remaining legal placements and the region reachable from the current frontier. Add an oracle comparison test for every bound.
 
-- [x] **Step 6: 用生成的小棋盘做最优性回归**
+- [x] **Step 6: Run generated small-board optimality regression**
 
-枚举固定种子的 3×3/4×3 目标掩码和小库存；跳过摆法数超过 12 的输入；对两个目标比较生产搜索与独立穷举的完整 `{coveredCells, placedPieces}`。
+Enumerate fixed-seed 3x3 and 4x3 target masks with small inventories. Skip inputs with more than 12 placements. For both objectives, compare the full `{coveredCells, placedPieces}` result from production search against the independent brute-force oracle.
 
 Run: `node --test test/search.test.js`
 
-Expected: 两种目标的所有固定 fixture 均与独立穷举一致，重复运行布局键一致。
+Expected: Every fixed fixture matches the oracle under both objectives, and repeated runs produce the same layout key.
 
-- [x] **Step 7: 全量 Core 测试和 diff 检查**
+- [x] **Step 7: Run the full Core suite and diff check**
 
 Run: `npm test && git diff --check`
 
-Expected: 全部 PASS。
+Expected: All tests PASS.
 
-### Task 4: 接入 Web Worker 和兼容门面
+### Task 4: Integrate the Web Worker and Compatibility Facade
 
 **Files:**
+
 - Create: `src/modules/solver/solver.worker.js`
 - Rewrite: `src/modules/legion_solver.js`
 - Create: `test/solver-contract.test.js`
 
-- [x] **Step 1: 写客户端消息契约测试**
+- [x] **Step 1: Write client message-contract tests**
 
-用注入的 `FakeWorker` 断言 `solve()` 发出 `start`，`pause()`/`continue()`/`stop()` 发出对应命令，`incumbent` 更新只接受分数更好的结果，`completed` resolve 最终 Promise。
+Use an injected `FakeWorker` to assert that `solve()` sends `start`, `pause()`/`continue()`/`stop()` send the corresponding commands, `incumbent` updates accept only better scores, and `completed` resolves the final Promise.
 
 ```js
 const solver = new LegionSolver(board, pieces, onBoardUpdated, {
@@ -468,15 +473,15 @@ fakeWorker.emit({ type: 'completed', result });
 assert.deepEqual(await promise, result);
 ```
 
-- [x] **Step 2: 运行契约测试并确认红灯**
+- [x] **Step 2: Run the contract test and confirm the red state**
 
 Run: `node --test test/solver-contract.test.js`
 
-Expected: FAIL，因为旧 `LegionSolver` 不支持 Worker 契约。
+Expected: FAIL because the old `LegionSolver` does not implement the Worker contract.
 
-- [x] **Step 3: 实现 Worker 分批运行**
+- [x] **Step 3: Implement batched Worker execution**
 
-`solver.worker.js`：
+`solver.worker.js`:
 
 ```js
 let search = null;
@@ -500,27 +505,28 @@ function runBatch() {
 }
 ```
 
-消息必须捕获输入校验和异常，分别返回 `invalid` 或 `error`，并保证一次搜索只结束一次。
+The message layer catches validation failures and unexpected exceptions, returning `invalid` and `error` respectively. A search may terminate only once.
 
-- [x] **Step 4: 重写 `LegionSolver` 为客户端门面**
+- [x] **Step 4: Rewrite `LegionSolver` as a Worker client facade**
 
-默认 Worker 工厂使用 Webpack 5 兼容写法：
+The default Worker factory uses the Webpack 5-compatible form:
 
 ```js
 () => new Worker(new URL('./solver/solver.worker.js', import.meta.url), { type: 'module' })
 ```
 
-门面保留 `solve()`、`pause()`、`continue()`、`stop()`、`iterations`、`time`、`board` 和 `history`。Worker 布局通过单一 `applyResultToBoard()` 转为原颜色 ID 规则，锚点格仍使用 `pieceId + 18`，避免改变棋盘显示。
+The facade preserves `solve()`, `pause()`, `continue()`, `stop()`, `iterations`, `time`, `board`, and `history`. Convert Worker placements to the original color-ID convention through one `applyResultToBoard()` function. Anchor cells continue using `pieceId + 18` so board rendering remains unchanged.
 
-- [x] **Step 5: 运行 Worker 客户端契约测试**
+- [x] **Step 5: Run Worker client contract tests**
 
 Run: `node --test test/solver-contract.test.js && npm test && git diff --check`
 
-Expected: 全部 PASS，无未处理 Promise rejection。
+Expected: All tests PASS with no unhandled Promise rejection.
 
-### Task 5: UI 增加双目标和真实结果状态
+### Task 5: Add Dual Objectives and Accurate Result States to the UI
 
 **Files:**
+
 - Modify: `src/index.html`
 - Modify: `src/styles.css`
 - Modify: `src/i18n.js`
@@ -531,9 +537,9 @@ Expected: 全部 PASS，无未处理 Promise rejection。
 - Modify: `src/locales/tw.js`
 - Modify: `src/board.js`
 
-- [x] **Step 1: 添加最小化单选 UI**
+- [x] **Step 1: Add minimal radio-button UI**
 
-在 `#options` 内添加：
+Add this inside `#options`:
 
 ```html
 <fieldset id="objectiveOptions">
@@ -544,11 +550,11 @@ Expected: 全部 PASS，无未处理 Promise rejection。
 <div id="resultSummary" aria-live="polite"></div>
 ```
 
-CSS 使用现有字号和颜色，不设固定宽度；窄屏时允许两项换行；`fieldset` 使用透明背景和当前文字色。
+Use the existing font size and colors. Do not assign a fixed width. Allow both options to wrap on narrow screens. The `fieldset` uses a transparent background and the current text color.
 
-- [x] **Step 2: 接入规范存储键和 i18n**
+- [x] **Step 2: Connect the canonical storage key and i18n**
 
-`board.js` 只使用 `legionSolverObjective` 这一键：
+`board.js` uses only the `legionSolverObjective` key:
 
 ```js
 const savedObjective = localStorage.getItem('legionSolverObjective');
@@ -557,11 +563,11 @@ let objective = Object.values(OBJECTIVES).includes(savedObjective)
   : OBJECTIVES.COVERAGE;
 ```
 
-切换时更新内存和 `localStorage`。`i18n.js` 填充 `objectiveLegend`、`coverageObjective`、`piecesObjective` 和结果文案。五个 locale 使用对应语言，不保留英文 fallback 链。
+Update memory and `localStorage` when the option changes. `i18n.js` fills `objectiveLegend`, `coverageObjective`, `piecesObjective`, and the result copy. All five locales use their own translations without an English fallback chain.
 
-- [x] **Step 3: 简化 `runSolver()`**
+- [x] **Step 3: Simplify `runSolver()`**
 
-删除旧版为四个棋盘方向创建四套求解器并 `Promise.race` 的逻辑，只创建一个 Worker 客户端：
+Remove the old logic that created four solvers for four board rotations and raced them with `Promise.race`. Create only one Worker client:
 
 ```js
 const solver = new LegionSolver(board, pieces, onBoardUpdated, { objective });
@@ -570,31 +576,32 @@ const result = await solver.solve();
 renderResult(result, solver.stats);
 ```
 
-`renderResult()` 按状态展示“覆盖 x/y 格、使用 a/b 块、最优解/当前最佳”。`Live Solve` 只在 incumbent 改善时重绘，并以 100ms 为最小间隔。重置时终止 Worker 并恢复目标格，不留下已放颜色。
+`renderResult()` displays `Covered x/y cells`, `Used a/b pieces`, and `Optimal` or `Best Known` according to the result state. Live Solve redraws only when the incumbent improves and is throttled to at most one update every 100 ms. Reset terminates the Worker and restores target cells without leaving block colors behind.
 
-- [x] **Step 4: 更新使用说明**
+- [x] **Step 4: Update usage instructions**
 
-删除“积木面积必须等于所选格子，否则死循环”的旧说明，明确数量是可用上限、允许空白，并说明两个优化目标。
+Remove the obsolete warning that block area must equal selected area or the solver will loop forever. State that counts are availability limits, blanks are allowed, and two optimization objectives are available.
 
-- [x] **Step 5: 定向构建验证**
+- [x] **Step 5: Run targeted build verification**
 
 Run: `npm test && npx webpack --config webpack.config.dev.cjs && git diff --check`
 
-Expected: 测试 PASS；Webpack 无模块解析或 Worker chunk 错误；diff 检查通过。
+Expected: Tests PASS, Webpack reports no module-resolution or Worker-chunk errors, and the diff check passes.
 
-### Task 6: 建立基准并优化热路径
+### Task 6: Establish Benchmarks and Optimize Hot Paths
 
 **Files:**
+
 - Create: `benchmarks/fixtures.js`
 - Create: `benchmarks/solver-benchmark.js`
 - Modify: `src/modules/solver/search.js`
 - Modify: `src/modules/solver/problem.js`
 
-- [x] **Step 1: 固化六类基准输入**
+- [x] **Step 1: Fix six benchmark categories**
 
-`fixtures.js` 导出普通完全覆盖、复杂完全覆盖、目标比积木多 1 格、目标比积木多 4 格、重复积木、无中心起步。每个 fixture 包含固定棋盘、库存、模式和预期最佳评分；预期评分先由正确性测试或小规模可验证构造确认，不从新版输出反向抄写。
+`fixtures.js` exports an ordinary exact cover, a complex exact cover, a target one cell larger than available block area, a target four cells larger than available block area, repeated block types, and a case with no legal center start. Every fixture contains a fixed board, inventory, objective, and expected optimal score. Establish expected scores from correctness tests or independently verifiable constructions rather than copying output from the new solver.
 
-- [x] **Step 2: 实现可重复基准脚本**
+- [x] **Step 2: Implement a repeatable benchmark runner**
 
 ```js
 for (const fixture of fixtures) {
@@ -609,62 +616,63 @@ for (const fixture of fixtures) {
 }
 ```
 
-同时打印首解时间、最优证明时间、展开状态数、缓存命中、剪枝数和最终评分。脚本任一评分错误时以非零状态退出。
+Also print first-solution time, optimality-proof time, expanded states, cache hits, pruned states, and final score. Exit with a nonzero status on any incorrect score.
 
-- [x] **Step 3: 记录初始新版基准**
+- [x] **Step 3: Record the initial new-solver benchmark**
 
 Run: `npm run benchmark`
 
-Expected: 所有 fixture 评分正确并输出结构化指标；若某例超过 10 秒，脚本中止该例并明确报告未达标，不挂死 CI 或本地终端。
+Expected: Every fixture reports the correct score and structured metrics. If any fixture exceeds ten seconds, abort it and report the missed target rather than hanging CI or the local terminal.
 
-- [x] **Step 4: 逐项优化已测得的热路径**
+- [x] **Step 4: Optimize measured hot paths one at a time**
 
-按 profile 证据依次考虑：候选表按库存和邻接增量过滤、位图对象复用、缓存键减少序列化、候选排序结果缓存、剩余覆盖并集上界、空白分量面积可达表。每引入一个剪枝，先新增与独立穷举器对照的测试，再保留该优化。
+Based on profiling evidence, consider candidate filtering by inventory and adjacency gain, bitset reuse, reduced cache-key serialization, cached candidate order, remaining-coverage union bounds, and reachable-area tables for blank components. Add an independent oracle comparison test before retaining any new pruning rule.
 
-不得仅为追求基准而引入无完备性证明的硬剪枝；此类规则只能改变候选顺序。
+Do not introduce an unproven hard prune solely to improve the benchmark. Such a rule may change candidate order but may not discard branches.
 
-- [x] **Step 5: 验证性能门槛和确定性**
+- [x] **Step 5: Verify performance thresholds and determinism**
 
 Run: `npm test && npm run benchmark && git diff --check`
 
-Expected: 普通用例即时完成；旧版慢例在 250ms 内提供首个合法解，目标 fixture 在 2 秒内完成或证明最优；同一 fixture 连续运行评分和布局键一致。未达标时保留指标并继续定位，不能把“Worker 不阻塞 UI”等同于求解已变快。
+Expected: Ordinary cases complete immediately, formerly slow inputs produce a legal incumbent within 250 ms, target fixtures complete or prove optimality within two seconds, and repeated runs of the same fixture produce the same score and layout key. If a target is missed, retain the metrics and continue profiling; do not equate a responsive Worker with a faster solver.
 
-### Task 7: 浏览器冒烟、文档和最终验收
+### Task 7: Browser Smoke Tests, Documentation, and Final Acceptance
 
 **Files:**
+
 - Modify: `README.md`
-- Modify only if defects are found: files changed in Tasks 1–6
+- Modify only if defects are found: files changed in Tasks 1 through 6
 
-- [x] **Step 1: 更新 README**
+- [x] **Step 1: Update the README**
 
-记录：默认格子覆盖优先、两种词典序、允许空白/剩余积木、结果状态含义、Worker 不阻塞 UI，以及 `npm test`、`npm run benchmark`、`npm run dev` 命令。不要声称所有输入都能在固定时间内证明最优。
+Document the default Cell Coverage First mode, both lexicographic orders, permitted blanks and unused inventory, result-state meanings, non-blocking Worker architecture, and the `npm test`, `npm run benchmark`, and `npm run dev` commands. Do not claim that every input can be proven optimal within a fixed time.
 
-- [x] **Step 2: 启动本地开发服务器**
+- [x] **Step 2: Start the local development server**
 
 Run: `npm run dev`
 
-Expected: Webpack dev server 启动成功；`webpack.config.dev.cjs` 固定 `open: false`，不主动打开系统浏览器。
+Expected: Webpack dev server starts successfully. `webpack.config.dev.cjs` keeps `open: false` and does not launch a system browser.
 
-- [ ] **Step 3: 用 Codex App 内置浏览器做桌面冒烟**
+- [ ] **Step 3: Run a desktop smoke test in the Codex App browser**
 
-验证：默认格子优先；切换后刷新仍保留；普通用例完成并显示正确统计；面积不相等仍返回布局；运行时暂停/继续；停止显示当前最佳；重置恢复目标格；实时求解不会高频闪烁。
+Verify that Cell Coverage First is the default, the selected objective survives a refresh, an ordinary case completes with correct statistics, unequal areas still return a layout, pause/resume works, stop displays Best Known, reset restores the target, and Live Solve does not flicker from excessive updates.
 
-- [ ] **Step 4: 用内置浏览器做窄屏冒烟**
+- [ ] **Step 4: Run a narrow-viewport smoke test in the Codex App browser**
 
-验证：目标选项可见可点、标签不截断、棋盘原有横向行为不恶化、按钮和结果区不重叠。若内置浏览器不可用，改用 HTTP 黑盒、构建和 DOM 测试，并在交付中明确未完成视觉验收，不回退到 Chrome。
+Verify that objective options remain visible and clickable, labels are not clipped, the board's existing horizontal behavior does not regress, and controls do not overlap the result area. If the in-app browser is unavailable, use HTTP black-box checks, builds, and DOM tests instead; record the missing visual acceptance and do not fall back to Chrome.
 
-2026-09-15 验收记录：Codex App 内置浏览器返回 `Codex auth token is unavailable`，因此步骤 3、4 保持未勾选；已按项目规则完成 HTTP 黑盒、自动化测试和开发构建，未回退到 Chrome 或外部 Playwright。
+2026-09-15 acceptance record: The Codex App browser returned `Codex auth token is unavailable`, so Steps 3 and 4 remain unchecked. HTTP black-box checks, automated tests, and development builds passed. Chrome and external Playwright were not used as fallbacks.
 
-- [x] **Step 5: 最终自动化验证**
+- [x] **Step 5: Run final automated verification**
 
 Run: `npm test && npm run benchmark && npx webpack --config webpack.config.dev.cjs && git diff --check`
 
-Expected: 测试、基准评分和开发构建通过，diff 无空白错误。
+Expected: Tests and benchmark scores pass, the development build succeeds, and the diff contains no whitespace errors.
 
-- [ ] **Step 6: 检查任务边界**
+- [x] **Step 6: Verify task boundaries**
 
-Run: `git status --short && git diff --stat && git diff`
+Before the user-approved commit, run: `git status --short && git diff --stat && git diff`
 
-Expected: 只有规格、计划和本任务实现文件发生变化；无 `dist`、日志、缓存、真实账号或敏感配置进入 diff；保持未暂存、未提交、未推送状态。
+Expected: Only the specification, plan, implementation, and test files for this task are changed. No `dist` output, logs, caches, credentials, or sensitive configuration enters the diff.
 
-2026-09-15 边界记录：当前未提交 diff 仅包含本任务实现、测试和文档；但远端已有的 `fbae099` 提交额外包含任务外 `personal.code-workspace`。本轮不改写已推送历史，也不擅自删除该文件，因此本步骤保持未勾选并向用户单独说明。
+2026-09-15 completion record: Task files were reviewed and committed as `5324a06` after explicit user approval, then pushed to `master`. The older `fbae099` commit also contained the unrelated `personal.code-workspace`; published history was not rewritten and that file was not changed as part of this task. GitHub Pages deployment was added separately in `687f173`.

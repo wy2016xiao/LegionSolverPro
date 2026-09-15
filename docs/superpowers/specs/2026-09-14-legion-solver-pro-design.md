@@ -1,201 +1,201 @@
-# LegionSolverPro 求解器加速设计
+# LegionSolverPro Solver Acceleration Design
 
-- 日期：2026-09-14
-- 状态：已确认
-- 范围：保持联盟规则和主要 UI 操作不变，重写求解算法内部以提升速度，并增加可选优化目标
+- Date: 2026-09-14
+- Status: Approved
+- Scope: Preserve Legion rules and primary UI interactions, replace the internal solving algorithm for speed, and add selectable optimization objectives
 
-## 1. 背景
+## 1. Background
 
-现有项目把棋盘、求解状态和回溯过程放在浏览器主线程中。求解器逐格尝试积木，每次放置和回退还会复制、扫描、排序多个数组。简单输入可以很快完成，但复杂输入会进入规模巨大的重复搜索；主线程虽然周期性让出执行权，页面仍会明显卡顿。
+The original project ran the board state, solver state, and backtracking process on the browser's main thread. The solver tried blocks cell by cell and repeatedly copied, scanned, and sorted several arrays during placement and rollback. Simple inputs completed quickly, but complex inputs entered a very large space of repeated searches. Although the main thread yielded periodically, the page could still become noticeably unresponsive.
 
-本次不改变联盟积木的业务含义，不重做页面，也不把性能问题简单归因于 JavaScript。优化重点是搜索模型、数据表示、剪枝和线程隔离。首版仍使用 JavaScript；只有新的算法和基准完成后仍达不到目标，才评估 Rust/WASM。
+This change does not alter the business meaning of Legion blocks, redesign the page, or assume that JavaScript itself is the root cause. The primary targets are the search model, data representation, pruning, and thread isolation. The first version remains in JavaScript. Rust/WASM should be evaluated only if the new algorithm and benchmarks still fail to meet the performance targets.
 
-## 2. 产品目标
+## 2. Product Goals
 
-### 2.1 保持不变
+### 2.1 Behavior That Remains Unchanged
 
-- 用户继续在现有棋盘上选择希望覆盖的格子。
-- 用户继续按形状输入可用积木数量。
-- 棋盘尺寸、积木形状、旋转和翻转规则、中心锚点规则以及四向连接规则保持不变。
-- 保留开始、暂停、继续、重置、实时求解、整区选择和深色模式等现有操作。
-- 不要求用户录入角色战斗属性、联盟队员效果或面板权重。
+- Users continue selecting the cells they want to cover on the existing board.
+- Users continue entering the available inventory for each block shape.
+- Board dimensions, block shapes, rotation and reflection rules, center-anchor rules, and four-direction connectivity rules remain unchanged.
+- Existing controls such as start, pause, resume, reset, live solve, region selection, and dark mode remain available.
+- Users do not need to enter character combat stats, Legion member effects, or stat weights.
 
-### 2.2 新增优化目标
+### 2.2 New Optimization Objectives
 
-在现有求解区域增加“优化目标”，提供两个互斥选项：
+Add an **Optimization Goal** control to the existing solver area with two mutually exclusive options:
 
-1. `格子覆盖优先`，默认选中。
-2. `积木数量优先`。
+1. `Cell Coverage First`, selected by default.
+2. `Piece Count First`.
 
-选择写入 `localStorage`，下次打开时恢复。若没有历史值，使用 `格子覆盖优先`。
+Persist the selection in `localStorage` and restore it on the next visit. When no saved value exists, use `Cell Coverage First`.
 
-积木输入数量表示该形状的可用上限。求解器允许不使用全部积木，也允许选中区域存在空白。
+The entered block count is the maximum available inventory for that shape. The solver may leave blocks unused and may leave selected cells uncovered.
 
-### 2.3 非目标
+### 2.3 Non-goals
 
-- 不计算角色卡和联盟格子的真实战斗收益。
-- 不增加职业、装备、面板或属性权重配置。
-- 不更换前端框架，不进行无关的视觉改版。
-- 首版不引入服务端求解、Rust 或 WebAssembly。
+- Do not calculate the real combat value of character cards or Legion grid cells.
+- Do not add class, equipment, character sheet, or stat-weight configuration.
+- Do not replace the frontend framework or perform an unrelated visual redesign.
+- Do not introduce server-side solving, Rust, or WebAssembly in the first version.
 
-## 3. 精确评分语义
+## 3. Exact Scoring Semantics
 
-每个合法解记录：
+Each legal solution records:
 
-- `coveredCells`：被积木覆盖的已选格子数量。
-- `placedPieces`：实际放入棋盘的积木数量。
-- `layoutKey`：按积木类型、姿态和坐标生成的确定性布局标识，只用于稳定搜索、缓存和消息去重，不代表额外的游戏收益。
+- `coveredCells`: Number of selected cells covered by blocks.
+- `placedPieces`: Number of blocks actually placed on the board.
+- `layoutKey`: A deterministic layout identifier derived from block type, orientation, and coordinates. It is used only for stable search, caching, and message deduplication; it does not represent additional in-game value.
 
-两种模式均使用词典序比较，而不是把两个指标折算成可能失真的单一权重：
+Both modes use lexicographic comparison instead of collapsing the two metrics into a potentially misleading weighted score:
 
 ```text
-格子覆盖优先：coveredCells DESC, placedPieces DESC
-积木数量优先：placedPieces DESC, coveredCells DESC
+Cell Coverage First: coveredCells DESC, placedPieces DESC
+Piece Count First: placedPieces DESC, coveredCells DESC
 ```
 
-业务评分完全相同时，求解器保留确定性搜索顺序首先找到的布局。同一输入会稳定得到同一 `layoutKey`，但不会为了最小化这个无业务含义的字符串增加指数级搜索。
+When the business scores are tied, the solver keeps the first layout found by its deterministic search order. The same input therefore produces the same `layoutKey`, but the solver does not perform additional exponential search merely to minimize a string with no business meaning.
 
-例如，一个解覆盖 158 格并使用 38 块，另一个解覆盖 157 格并使用 39 块：格子覆盖优先选择前者，积木数量优先选择后者。
+For example, if one solution covers 158 cells with 38 blocks and another covers 157 cells with 39 blocks, Cell Coverage First selects the first solution while Piece Count First selects the second.
 
-只有搜索已经穷尽或通过上界证明不存在更优解时，结果才标记为“最优”。暂停或用户停止时可以保留当前最好布局，但必须标记为“当前最佳”，不得冒充最优解。
+A result is marked **Optimal** only after the search is exhausted or an upper bound proves that no better solution exists. Pausing or stopping may preserve the best layout found so far, but it must be marked **Best Known** rather than presented as optimal.
 
-## 4. 合法解约束
+## 4. Legal Solution Constraints
 
-- 积木只能覆盖用户选中的目标格，不能越界、覆盖未选格或彼此重叠。
-- 每种积木的使用数量不能超过输入数量。
-- 旋转和镜像后完全相同的姿态只保留一次。
-- 至少一个积木的锚点落在棋盘中心区域的合法格上。
-- 所有已放积木形成一个四向连通整体。
-- 空白仅指“已选但未覆盖”的目标格；未选格不参与评分。
-- 没有选中格子、没有可用积木或不存在合法中心起步时，返回明确的输入错误或无可行解状态，不启动无意义搜索。
+- Blocks may cover only user-selected target cells. They may not leave the board, cover unselected cells, or overlap one another.
+- Usage of each block type may not exceed its entered inventory.
+- Rotations and reflections that produce identical orientations are retained only once.
+- At least one placed block must have an anchor cell on a legal cell in the board's center region.
+- All placed blocks must form one four-direction connected component.
+- A blank means a selected target cell that remains uncovered. Unselected cells do not participate in scoring.
+- If no cells are selected, no blocks are available, or no legal center placement exists, return an explicit invalid-input or no-solution result without starting a meaningless search.
 
-## 5. 架构
+## 5. Architecture
 
-### 5.1 UI 适配层
+### 5.1 UI Adapter Layer
 
-`board.js` 继续负责现有 DOM 交互、棋盘绘制和状态显示。原 `LegionSolver` 对外入口保留为兼容门面，内部改为与 Worker 通信，避免把搜索细节泄漏到 UI。
+`board.js` remains responsible for DOM interactions, board rendering, and status presentation. The public `LegionSolver` entry point remains as a compatibility facade, while its internals communicate with a Worker so that search details do not leak into the UI.
 
-UI 只在以下事件重绘棋盘：
+The UI redraws the board only when:
 
-- 收到更优解；
-- 用户暂停或停止；
-- 搜索完成；
-- 用户重置。
+- A better solution arrives.
+- The user pauses or stops.
+- Search completes.
+- The user resets the board.
 
-启用实时求解时，更优解消息仍需限频，避免高频 DOM 更新抵消算法收益。
+When Live Solve is enabled, improved-solution messages must still be throttled so that frequent DOM updates do not cancel the algorithmic gains.
 
-### 5.2 Worker 控制层
+### 5.2 Worker Control Layer
 
-求解在 Web Worker 中运行。消息协议至少包含：
+Solving runs in a Web Worker. The message protocol includes at least:
 
-- 输入：目标格、积木库存、优化目标和运行命令。
-- 控制：`start`、`pause`、`resume`、`cancel`。
-- 输出：`progress`、`incumbent`、`completed`、`cancelled`、`error`。
+- Input: target cells, block inventory, optimization objective, and run command.
+- Control: `start`, `pause`, `resume`, and `cancel`.
+- Output: `progress`, `incumbent`, `completed`, `cancelled`, and `error`.
 
-搜索使用可恢复的显式栈并分批执行。每批结束后让出 Worker 事件循环，以便及时响应暂停和取消；不依赖 `SharedArrayBuffer` 或特殊跨域响应头。
+Search uses a resumable explicit stack and runs in batches. Each batch yields the Worker event loop so pause and cancellation commands can be handled promptly. The design does not depend on `SharedArrayBuffer` or special cross-origin response headers.
 
-### 5.3 纯 Solver Core
+### 5.3 Pure Solver Core
 
-Solver Core 不访问 DOM、`localStorage` 或计时器，只接受普通数据并产生搜索事件，因此可直接在 Node 测试中运行。
+The Solver Core does not access the DOM, `localStorage`, or timers. It accepts plain data and emits search events, which allows it to run directly in Node.js tests.
 
-建议边界如下：
+Recommended module boundaries:
 
-- 棋盘编码：把目标格压缩为连续索引，并用 `Uint32Array` 位图表示占用状态。
-- 姿态生成：生成并去重每类积木的旋转、镜像姿态；保留原数据中所有数值为 `2` 的锚点格，不能擅自收敛成单锚点。
-- 合法摆法预计算：为每种姿态预生成所有完全位于目标区域内的摆法，记录覆盖位图、锚点索引集合和邻接信息。
-- 评分器：集中实现两种词典序比较，业务代码不自行拼接权重。
-- 搜索器：维护占用位图、剩余库存、当前布局、当前最好解和统计信息。
+- Board encoding: Compress target cells into contiguous indices and represent occupancy with `Uint32Array` bitsets.
+- Orientation generation: Generate and deduplicate rotations and reflections for each block type. Preserve every source cell whose value is `2` as an anchor candidate rather than collapsing a shape to one anchor.
+- Legal placement precomputation: Generate every placement that lies entirely inside the target region. Record its coverage mask, anchor indices, and adjacency information.
+- Scoring: Centralize both lexicographic comparisons so business code never constructs its own weighted score.
+- Search: Maintain occupancy, remaining inventory, current layout, current incumbent, and statistics.
 
-这些模块通过普通对象和类型约定通信，后续即使把搜索器替换为 WASM，UI 和评分语义也不需要改变。
+These modules communicate through plain objects and documented data contracts. If the search implementation is later replaced with WASM, the UI and scoring semantics should not need to change.
 
-## 6. 搜索算法
+## 6. Search Algorithm
 
-### 6.1 初始解和搜索顺序
+### 6.1 Initial Solution and Search Order
 
-先用快速贪心与有限局部改进生成一个合法布局，尽早建立较强下界。随后进行精确 branch-and-bound 搜索：
+First, use a fast greedy pass with limited local improvement to produce a legal layout and establish a strong lower bound early. Then run an exact branch-and-bound search:
 
-1. 从中心锚点合法的摆法开始。
-2. 每一步只扩展与当前布局四向相邻且不冲突的摆法，天然保持整体连通。
-3. 优先尝试更可能改善当前模式主目标的分支。
-4. 在每个节点比较并保存当前最好解，因此暂停或取消也能返回可用结果。
+1. Start from placements whose anchors are legal in the center region.
+2. At every step, expand only placements that are four-direction adjacent to and do not conflict with the current layout, preserving connectivity by construction.
+3. Try branches that are more likely to improve the current mode's primary objective first.
+4. Compare and save the incumbent at every node so pausing or cancellation can still return a usable result.
 
-相同最终占用可能由不同放置顺序到达。搜索状态使用“占用位图 + 剩余库存”缓存，避免重复展开；相同类型的积木不按实例编号区分，消除交换对称。
+The same final occupancy may be reached through different placement orders. Cache search states by `occupancy bitset + remaining inventory` to avoid repeated expansion. Blocks of the same type are not distinguished by instance ID, eliminating exchange symmetry.
 
-### 6.2 分支选择
+### 6.2 Branch Selection
 
-使用 MRV 思路优先处理候选摆法最少的受约束区域，并结合以下启发式排序：
+Use an MRV strategy to process the constrained frontier cell with the fewest legal placements first, combined with these ordering heuristics:
 
-- 是否填补狭窄区域或小连通分量；
-- 新增覆盖格数；
-- 对当前优化目标的增益；
-- 稳定的积木类型、姿态和坐标顺序。
+- Whether a placement fills a narrow region or small connected component.
+- Number of newly covered cells.
+- Gain under the active optimization objective.
+- Stable block type, orientation, and coordinate order.
 
-启发式只改变找到好解的速度，不改变合法解集合和最终最优性。
+Heuristics change only how quickly good solutions are found. They do not change the legal solution set or final optimality.
 
-### 6.3 上界与剪枝
+### 6.3 Upper Bounds and Pruning
 
-每个状态计算乐观上界：
+Calculate optimistic upper bounds for every state:
 
-- 剩余库存最多还能增加多少覆盖格；
-- 剩余库存最多还能增加多少积木数；
-- 未占目标格中仍能被候选摆法覆盖的并集；
-- 从当前连通整体仍可到达的目标区域；
-- 小型空白连通分量是否能由剩余积木面积组合填充；
-- 棋盘奇偶着色与积木奇偶贡献是否已经不可能达到当前目标。
+- Maximum additional cells that remaining inventory could cover.
+- Maximum additional number of blocks that remaining inventory could place.
+- Union of uncovered target cells that still have a legal candidate placement.
+- Target region still reachable from the current connected component.
+- Whether small blank components can be filled by a combination of remaining block areas.
+- Whether board parity coloring and the remaining blocks' parity contributions make the incumbent target impossible.
 
-若该状态即使达到乐观上界，也不能按当前词典序超过最好解，则立即剪枝。所有剪枝必须具有不会排除真实最优解的证明；仅影响排序、没有完备性证明的规则只能作为启发式，不能直接丢弃分支。
+Prune a state immediately when even its optimistic bound cannot beat the incumbent under the active lexicographic objective. Every pruning rule must have a proof that it cannot exclude the true optimum. Rules that only improve ordering and lack a completeness proof may be used as heuristics but may not discard branches.
 
-## 7. 状态与错误处理
+## 7. State and Error Handling
 
-用户可见状态分为：
+User-visible states:
 
-- `正在求解`：显示耗时、已探索状态数和当前最好成绩。
-- `已暂停`：保留 Worker 搜索栈和当前布局，可继续。
-- `最优解`：已经证明当前布局最优。
-- `当前最佳`：用户主动停止或取消前得到的最好布局，尚未证明最优。
-- `无可行解`：没有任何满足中心和连通规则的积木可放置。
-- `输入无效`：例如没有目标格或积木数量非法。
-- `求解错误`：Worker 或算法发生异常；恢复按钮状态，并保留可诊断但不包含敏感数据的错误信息。
+- **Solving:** Display elapsed time, explored-state count, and the current best score.
+- **Paused:** Preserve the Worker stack and current layout so the search can resume.
+- **Optimal:** The current layout has been proven optimal.
+- **Best Known:** The user stopped or cancelled after a usable layout was found, but optimality has not been proven.
+- **No Solution:** No block can be placed while satisfying the center and connectivity rules.
+- **Invalid Input:** For example, no target cells were selected or an inventory value is invalid.
+- **Solver Error:** A Worker or algorithm exception occurred. Restore the controls and retain diagnostic information that contains no sensitive data.
 
-结果区显示 `覆盖 x/y 格`、`使用 a/b 块` 和最优性状态。不能再以“算法返回 true”代表全部积木或全部目标格已完成。
+The result area displays `Covered x/y cells`, `Used a/b pieces`, and the optimality state. A boolean `true` result must no longer imply that every block was used or every target cell was covered.
 
-## 8. 性能目标
+## 8. Performance Targets
 
-在同一台开发机器、同一浏览器和固定输入上比较旧版与新版：
+Compare the old and new implementations on the same development machine, browser, and fixed inputs:
 
-- 搜索期间主线程不执行求解循环；开始、暂停、继续和停止操作应在 100ms 内得到界面反馈。
-- 普通可完全覆盖用例保持即时完成，不因新架构明显退化。
-- 旧版在 3 至 5 秒内无法完成的复杂和面积不相等用例，新版应在 250ms 内给出第一个合法当前最佳解。
-- 目标基准用例应在 2 秒内完成或证明最优；若未达到，继续通过基准定位算法瓶颈，再决定是否进入 Rust/WASM 评估。
-- 取消命令在 Worker 下一执行批次生效，目标响应时间不超过 100ms。
+- The main thread must not execute the search loop. Start, pause, resume, and stop should produce visible UI feedback within 100 ms.
+- Ordinary exact-cover cases should remain effectively immediate and must not regress noticeably because of the new architecture.
+- For complex or unequal-area inputs that the old solver cannot finish in three to five seconds, the new solver should produce its first legal incumbent within 250 ms.
+- Target benchmark fixtures should complete or prove optimality within two seconds. If they do not, continue profiling algorithmic bottlenecks before evaluating Rust/WASM.
+- Cancellation should take effect on the Worker's next execution batch, with a target response time of no more than 100 ms.
 
-性能测试报告同时记录输入摘要、运行环境、首解时间、最优证明时间、探索状态数、缓存命中和最终评分，避免只报告一次偶然的墙钟时间。
+Performance reports record the input summary, environment, first-solution time, optimality-proof time, explored states, cache hits, and final score rather than reporting one accidental wall-clock sample.
 
-## 9. 测试与验收
+## 9. Testing and Acceptance
 
-### 9.1 正确性
+### 9.1 Correctness
 
-- 姿态去重、坐标变换和合法摆法预计算单元测试。
-- 两种评分器的冲突案例，以及同分布局不增加第三个业务目标的测试。
-- 中心锚点、越界、重叠、库存上限和四向连通测试。
-- 允许空白、允许剩余积木以及面积不相等输入测试。
-- 对小棋盘使用独立穷举器生成真值，逐项核对两个优化模式的最优评分。
-- 固定输入重复运行必须得到相同评分和相同布局。
+- Unit tests for orientation deduplication, coordinate transformations, and legal placement precomputation.
+- Conflicting fixtures for both scoring modes, including a test proving that tied layouts do not create a third business objective.
+- Tests for center anchors, bounds, overlap, inventory limits, and four-direction connectivity.
+- Tests for permitted blanks, unused blocks, and inputs with unequal areas.
+- Compare both optimization modes against an independent brute-force oracle on small boards.
+- Repeated runs of a fixed input must produce the same score and layout.
 
-### 9.2 Worker 与 UI
+### 9.2 Worker and UI
 
-- 开始、暂停、继续、取消、重置及异常恢复测试。
-- `localStorage` 默认值和两种优化目标持久化测试。
-- 实时求解只显示单调变好的解，并受到更新频率限制。
-- 桌面宽度与窄屏下，新增选项不遮挡现有按钮和棋盘。
-- 五种现有语言均补齐优化目标、结果状态和错误文案。
+- Tests for start, pause, resume, cancel, reset, and error recovery.
+- Tests for the default `localStorage` value and persistence of both optimization objectives.
+- Live Solve displays only monotonically improving solutions and throttles update frequency.
+- The new options do not obscure existing buttons or the board at desktop or narrow viewport widths.
+- All five existing locales include the optimization objective, result state, and error copy.
 
-### 9.3 性能回归
+### 9.3 Performance Regression
 
-建立固定基准集，至少包含：普通完全覆盖、复杂完全覆盖、积木面积比目标多一格、积木面积比目标少数格、多种重复积木和无法合法中心起步。基准脚本不依赖 DOM，可以在 Node 中稳定重复运行。
+Create a fixed benchmark suite containing at least: an ordinary exact cover, a complex exact cover, block area one cell larger than the target, block area several cells smaller than the target, repeated block types, and a case with no legal center start. The benchmark must not depend on the DOM and must run deterministically in Node.js.
 
-## 10. 实施边界与许可证
+## 10. Implementation Boundaries and License
 
-实现沿用当前仓库技术栈和许可证边界。可以独立采用位图、MRV、branch-and-bound、连通域剪枝等通用算法思想，但不复制其他项目受 AGPL 约束的求解器源码。若未来引入第三方代码或 WASM 依赖，必须先核对许可证和发布影响。
+The implementation retains the repository's existing technology stack and license boundaries. General algorithmic ideas such as bitsets, MRV, branch-and-bound, and connected-component pruning may be implemented independently, but source code from AGPL-licensed solvers must not be copied. Any future third-party code or WASM dependency requires a license and distribution-impact review first.
 
-本次修改完成后只进行本地定向测试、静态检查、基准和浏览器冒烟验证。未经用户另行明确要求，不执行 `git add`、`git commit` 或 `git push`。
+After implementation, perform only targeted local tests, static checks, benchmarks, and browser smoke verification. Do not run `git add`, `git commit`, or `git push` without separate explicit user authorization.
